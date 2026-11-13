@@ -1,0 +1,21 @@
+# Binaries & build outputs
+/gnofy
+/bin/
+/dist/
+*.exe
+*.test
+*.out
+
+# GoLand / JetBrains & Editors
+.idea/
+.vscode/
+*.swp
+*~
+
+# Generated outputs during local testing
+/out/
+tmp/
+
+# OS files
+.DS_Store
+Thumbs.db
