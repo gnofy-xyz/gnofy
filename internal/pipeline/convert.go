@@ -103,7 +103,9 @@ func ConvertModule(ctx context.Context, mod *ir.Module, opts ConvertOptions) (*C
 	var lastErr string
 	attempts := 0
 
-	shouldVerify := opts.Verify || (aiActive && opts.Verifier != nil)
+	// En modo --ai=assist la verificación con `gno test` es siempre obligatoria
+	// para no escribir nunca código generado por IA sin verificar.
+	shouldVerify := opts.Verify || aiActive
 	v := opts.Verifier
 	if shouldVerify && v == nil {
 		v = &verify.Verifier{}

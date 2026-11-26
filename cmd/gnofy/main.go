@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -68,6 +69,9 @@ func runAnalyze(args []string) error {
 	fs.Var(&includePaths, "include-path", "Directorio adicional para resolver imports (repetible)")
 
 	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return nil
+		}
 		return err
 	}
 	if fs.NArg() == 0 {
@@ -108,10 +112,10 @@ func runConvert(args []string) error {
 	gnoBin := fs.String("gno", "", "Ruta explícita al binario gno (para --verify o --ai=assist)")
 
 	// Flags del motor leve de IA (Hito v0.4)
-	aiMode := fs.String("ai", "off", "Modo de resolución de huecos: 'off' (100% determinista) o 'assist' (IA quirúrgica)")
-	aiEndpoint := fs.String("ai-endpoint", envOr("GNOFY_AI_ENDPOINT", "http://localhost:11434/v1"), "Endpoint compatible OpenAI (/v1/chat/completions)")
-	aiModel := fs.String("ai-model", envOr("GNOFY_AI_MODEL", "qwen2.5-coder:7b"), "Modelo IA para resolver huecos aislados")
-	aiAPIKey := fs.String("ai-api-key", envOr("GNOFY_AI_API_KEY", os.Getenv("OPENAI_API_KEY")), "API key opcional para endpoint IA")
+	aiMode := fs.String("ai", "off", "Modo de resolución de huecos: 'off' (100% determinista) o 'assist' (IA quirúrgica verificada)")
+	aiEndpoint := fs.String("ai-endpoint", "http://localhost:11434/v1", "Endpoint compatible OpenAI (env: GNOFY_AI_ENDPOINT)")
+	aiModel := fs.String("ai-model", "qwen2.5-coder:7b", "Modelo IA para resolver huecos aislados (env: GNOFY_AI_MODEL)")
+	aiAPIKey := fs.String("ai-api-key", "", "API key opcional para endpoint IA (si se omite, lee GNOFY_AI_API_KEY u OPENAI_API_KEY)")
 	lockfilePath := fs.String("lockfile", "gnofy.lock", "Ruta del lockfile para cachear resoluciones IA verificadas")
 	maxRetries := fs.Int("max-retries", 2, "Reintentos máximos de reparación IA ante errores de gno test")
 
@@ -119,6 +123,9 @@ func runConvert(args []string) error {
 	fs.Var(&includePaths, "include-path", "Directorio adicional para resolver imports (repetible)")
 
 	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return nil
+		}
 		return err
 	}
 	if fs.NArg() == 0 {
@@ -126,6 +133,19 @@ func runConvert(args []string) error {
 	}
 	if *aiMode != "off" && *aiMode != "assist" {
 		return fmt.Errorf("--ai debe ser 'off' o 'assist' (recibido %q)", *aiMode)
+	}
+
+	resolvedEndpoint := *aiEndpoint
+	if !flagPassed(fs, "ai-endpoint") {
+		resolvedEndpoint = envOr("GNOFY_AI_ENDPOINT", resolvedEndpoint)
+	}
+	resolvedModel := *aiModel
+	if !flagPassed(fs, "ai-model") {
+		resolvedModel = envOr("GNOFY_AI_MODEL", resolvedModel)
+	}
+	resolvedAPIKey := *aiAPIKey
+	if resolvedAPIKey == "" {
+		resolvedAPIKey = envOr("GNOFY_AI_API_KEY", os.Getenv("OPENAI_API_KEY"))
 	}
 
 	genOpts := gnogen.DefaultOptions()
@@ -141,14 +161,14 @@ func runConvert(args []string) error {
 	var resolver ai.HoleResolver = ai.NoopResolver{}
 	if *aiMode == "assist" {
 		resolver = ai.NewOpenAICompatResolver(ai.OpenAICompatConfig{
-			Endpoint: *aiEndpoint,
-			Model:    *aiModel,
-			APIKey:   *aiAPIKey,
+			Endpoint: resolvedEndpoint,
+			Model:    resolvedModel,
+			APIKey:   resolvedAPIKey,
 		})
 	}
 
 	var verifier pipeline.Verifier
-	if *doVerify || *gnoBin != "" {
+	if *doVerify || *gnoBin != "" || *aiMode == "assist" {
 		verifier = &verify.Verifier{BinaryPath: *gnoBin}
 	}
 
@@ -190,6 +210,9 @@ func runVerify(args []string) error {
 	fs := flag.NewFlagSet("verify", flag.ContinueOnError)
 	gnoBin := fs.String("gno", "", "Ruta explícita al binario gno")
 	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return nil
+		}
 		return err
 	}
 	dir := "."
@@ -213,6 +236,16 @@ func envOr(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+func flagPassed(fs *flag.FlagSet, name string) bool {
+	found := false
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == name {
+			found = true
+		}
+	})
+	return found
 }
 
 func printUsage() {

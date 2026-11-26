@@ -5,6 +5,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -149,6 +150,57 @@ func TestConvertWideSignedIntEmitsHoleInsteadOfTruncating(t *testing.T) {
 	}
 	if strings.Contains(src, "delta int64") {
 		t.Fatalf("widesignedint.gno recortó int256 a int64 silenciosamente:\n%s", src)
+	}
+}
+
+func TestWriteFilesCleansStaleGnoFiles(t *testing.T) {
+	outDir := t.TempDir()
+
+	// Simular archivos huérfanos de una conversión anterior
+	staleFile := filepath.Join(outDir, "old_contract.gno")
+	staleSub := filepath.Join(outDir, "oldpkg", "old.gno")
+	if err := os.MkdirAll(filepath.Dir(staleSub), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(staleFile, []byte("package old\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(staleSub, []byte("package oldpkg\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	files := []gnogen.OutputFile{
+		{RelPath: "gnomod.toml", Content: []byte("module = \"gno.land/r/gnofy/newc\"\ngno = \"0.9\"\n")},
+		{RelPath: "newc.gno", Content: []byte("package newc\n")},
+	}
+	if err := gnogen.WriteFiles(outDir, files); err != nil {
+		t.Fatalf("WriteFiles error: %v", err)
+	}
+
+	if _, err := os.Stat(staleFile); !os.IsNotExist(err) {
+		t.Fatalf("old_contract.gno debía eliminarse al regenerar")
+	}
+	if _, err := os.Stat(staleSub); !os.IsNotExist(err) {
+		t.Fatalf("oldpkg/old.gno debía eliminarse al regenerar")
+	}
+	if _, err := os.Stat(filepath.Join(outDir, "newc.gno")); err != nil {
+		t.Fatalf("newc.gno debería existir: %v", err)
+	}
+
+	// Guarda de seguridad: si el directorio contiene go.mod, NO purgar .gno ajenos
+	repoDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(repoDir, "go.mod"), []byte("module x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	keepForeign := filepath.Join(repoDir, "foreign.gno")
+	if err := os.WriteFile(keepForeign, []byte("package foreign\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := gnogen.WriteFiles(repoDir, files); err != nil {
+		t.Fatalf("WriteFiles in repoDir error: %v", err)
+	}
+	if _, err := os.Stat(keepForeign); err != nil {
+		t.Fatalf("foreign.gno no debía borrarse cuando el directorio contiene go.mod")
 	}
 }
 

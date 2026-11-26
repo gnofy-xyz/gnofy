@@ -13,6 +13,15 @@ func TestOwnedVaultBaseConstructorsPreserved(cur realm, t *testing.T) {
 	ownerAddr := address("g1jg8mtutu9khhfwc4nxmuhcpftf0pajdhfvsqf5")
 	attacker := address("g1us8428u2a5satrlxzagqqa5m6vmuze025anjlj")
 
+	// En gno test init() corre sin MsgAddPackage; simulamos el despliegue por ownerAddr
+	deployer = ownerAddr
+
+	// Intento de front-running: atacante intenta llamar Init antes que el desplegador -> DEBE hacer panic
+	testing.SetRealm(testing.NewUserRealm(attacker))
+	expectPanicVault(t, "front-running Init by attacker", func() {
+		Init(cross(cur), U256FromU64(1))
+	})
+
 	testing.SetRealm(testing.NewUserRealm(ownerAddr))
 	Init(cross(cur), U256FromU64(500))
 

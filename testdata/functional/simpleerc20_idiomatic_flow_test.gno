@@ -18,6 +18,13 @@ func TestSimpleERC20IdiomaticGRC20Flow(cur realm, t *testing.T) {
 	ownerAddr := testutils.TestAddress("owner")
 	alice := testutils.TestAddress("alice")
 	bob := testutils.TestAddress("bob")
+	deployer = ownerAddr
+
+	// Anti-front-running: alice no puede llamar Init antes que el desplegador
+	testing.SetRealm(testing.NewUserRealm(alice))
+	expectPanicGRC20(t, "front-running GRC20 Init", func() {
+		Init(cross(cur), "Hijacked", "HJK", 999999)
+	})
 
 	testing.SetRealm(testing.NewUserRealm(ownerAddr))
 	Init(cross(cur), "GnofyToken", "GNOF", 1000)

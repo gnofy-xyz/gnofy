@@ -100,8 +100,18 @@ func (g *Generator) GenerateContext(ctx context.Context, mod *ir.Module) ([]Outp
 	return files, nil
 }
 
-// WriteFiles escribe los OutputFile bajo el directorio raíz outDir.
+// WriteFiles escribe los OutputFile bajo el directorio raíz outDir, limpiando
+// archivos .gno y gnomod.toml obsoletos de ejecuciones previas en esa carpeta.
 func WriteFiles(outDir string, files []OutputFile) error {
+	keep := make(map[string]bool, len(files))
+	for _, f := range files {
+		keep[filepath.ToSlash(filepath.Clean(f.RelPath))] = true
+	}
+
+	if err := cleanStaleGnoFiles(outDir, keep); err != nil {
+		return err
+	}
+
 	for _, f := range files {
 		full := filepath.Join(outDir, filepath.FromSlash(f.RelPath))
 		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
@@ -109,6 +119,68 @@ func WriteFiles(outDir string, files []OutputFile) error {
 		}
 		if err := os.WriteFile(full, f.Content, 0o644); err != nil {
 			return fmt.Errorf("write %s: %w", full, err)
+		}
+	}
+	return nil
+}
+
+func cleanStaleGnoFiles(outDir string, keep map[string]bool) error {
+	info, err := os.Stat(outDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("stat %s: %w", outDir, err)
+	}
+	if !info.IsDir() {
+		return nil
+	}
+
+	// Guarda de seguridad: nunca purgar archivos si outDir parece ser la raíz de un repo Go/Git
+	if _, err := os.Stat(filepath.Join(outDir, ".git")); err == nil {
+		return nil
+	}
+	if _, err := os.Stat(filepath.Join(outDir, "go.mod")); err == nil {
+		return nil
+	}
+
+	var dirs []string
+	err = filepath.WalkDir(outDir, func(path string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if path == outDir {
+			return nil
+		}
+		if d.IsDir() {
+			dirs = append(dirs, path)
+			return nil
+		}
+		rel, err := filepath.Rel(outDir, path)
+		if err != nil {
+			return err
+		}
+		relSlash := filepath.ToSlash(filepath.Clean(rel))
+		if keep[relSlash] {
+			return nil
+		}
+		base := filepath.Base(path)
+		if strings.HasSuffix(base, ".gno") || base == "gnomod.toml" {
+			if err := os.Remove(path); err != nil {
+				return fmt.Errorf("remove stale %s: %w", path, err)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
+	// Eliminar subdirectorios que hayan quedado vacíos tras purgar contratos antiguos
+	for i := len(dirs) - 1; i >= 0; i-- {
+		entries, err := os.ReadDir(dirs[i])
+		if err == nil && len(entries) == 0 {
+			_ = os.Remove(dirs[i])
 		}
 	}
 	return nil
@@ -303,6 +375,7 @@ func (g *Generator) emitContractSource(ctx context.Context, c *ir.Contract) ([]b
 	if len(c.StateVars) > 0 || c.HasInitArgs || c.UsesReentrancyGuard {
 		bodyBuf.WriteString("var (\n")
 		if c.HasInitArgs {
+			bodyBuf.WriteString("\tdeployer address\n")
 			bodyBuf.WriteString("\tinitialized bool\n")
 		}
 		if c.UsesReentrancyGuard {
@@ -320,6 +393,13 @@ func (g *Generator) emitContractSource(ctx context.Context, c *ir.Contract) ([]b
 			}
 		}
 		bodyBuf.WriteString(")\n\n")
+	}
+
+	// Captura atómica del desplegador en el despliegue del Realm para impedir front-running en Init(...)
+	if c.HasInitArgs {
+		bodyBuf.WriteString("func init(cur realm) {\n")
+		bodyBuf.WriteString("\tdeployer = cur.Previous().Address()\n")
+		bodyBuf.WriteString("}\n\n")
 	}
 
 	// Funciones
@@ -451,8 +531,9 @@ func (ec *emitCtx) emitFunction(buf *bytes.Buffer, fn *ir.Function) {
 	ec.curFnSig = fmt.Sprintf("func %s(%s)%s", fn.GoName, strings.Join(params, ", "), retSig)
 	fmt.Fprintf(buf, "%s {\n", ec.curFnSig)
 
-	// Guard para constructor parametrizado Init(...)
+	// Guard anti-front-running (fail-closed) + single-init para constructor parametrizado Init(...)
 	if fn.IsInit && len(fn.Params) > 0 {
+		fmt.Fprintf(buf, "\t%sRequire(deployer != address(\"\") && cur.Previous().Address() == deployer, \"%s: only deployer can initialize\")\n", ec.rtPrefix, ec.c.Name)
 		fmt.Fprintf(buf, "\t%sRequire(!initialized, \"%s: already initialized\")\n", ec.rtPrefix, ec.c.Name)
 		buf.WriteString("\tinitialized = true\n")
 	}

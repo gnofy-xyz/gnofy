@@ -13,8 +13,15 @@ func TestSimpleERC20StrictFlow(cur realm, t *testing.T) {
 	ownerAddr := address("g1jg8mtutu9khhfwc4nxmuhcpftf0pajdhfvsqf5")
 	alice := address("g1us8428u2a5satrlxzagqqa5m6vmuze025anjlj")
 	bob := address("g125em6arxsnj49vx3egfu0sv5tuy5puc0um6y2q")
+	deployer = ownerAddr
 
-	// 1. Init como owner
+	// Anti-front-running: alice no puede inicializar antes que el desplegador
+	testing.SetRealm(testing.NewUserRealm(alice))
+	expectPanicERC20(t, "front-running Init by non-deployer", func() {
+		Init(cross(cur), "Hijacked", "HJK", U256FromU64(999999))
+	})
+
+	// 1. Init como owner/desplegador
 	testing.SetRealm(testing.NewUserRealm(ownerAddr))
 	Init(cross(cur), "GnofyToken", "GNOF", U256FromU64(1000))
 

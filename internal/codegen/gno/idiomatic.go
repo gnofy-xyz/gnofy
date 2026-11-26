@@ -28,16 +28,22 @@ func (g *Generator) emitIdiomaticGRC20(c *ir.Contract) ([]byte, error) {
 	if c.IdiomaticOwnable {
 		buf.WriteString("\tOwnable     *ownable.Ownable\n")
 	}
+	buf.WriteString("\tdeployer    address\n")
 	buf.WriteString("\tinitialized bool\n")
 	buf.WriteString(")\n\n")
+
+	buf.WriteString("func init(cur realm) {\n")
+	buf.WriteString("\tdeployer = cur.Previous().Address()\n")
+	buf.WriteString("}\n\n")
 
 	decimals := c.DecimalsDefault
 	if decimals == 0 {
 		decimals = 6
 	}
 
-	fmt.Fprintf(&buf, "// Init inicializa el token GRC-20 (equivalente al constructor ERC-20).\n")
+	fmt.Fprintf(&buf, "// Init inicializa el token GRC-20 (solo invocable una vez por el desplegador).\n")
 	fmt.Fprintf(&buf, "func Init(cur realm, nameParam string, symbolParam string, initialSupply int64) {\n")
+	fmt.Fprintf(&buf, "\tif deployer == address(\"\") || cur.Previous().Address() != deployer {\n\t\tpanic(\"%s: only deployer can initialize\")\n\t}\n", c.Name)
 	fmt.Fprintf(&buf, "\tif initialized {\n\t\tpanic(\"%s: already initialized\")\n\t}\n", c.Name)
 	buf.WriteString("\tinitialized = true\n")
 	buf.WriteString("\tcaller := cur.Previous().Address()\n")
