@@ -348,9 +348,9 @@ ok      gno.land/r/counter  0.42s</pre></div>
     <div class="big rgb" data-t="get gnofy_">get gnofy<span class="blink">_</span></div>
     <p class="sub" style="margin-top:22px">Static binary. Requires <span style="color:var(--sol)">solc 0.8.x</span> and <span style="color:var(--gno-hot)">gno</span> on your PATH.</p>
     <div class="os" id="os">
-      <a href="#" data-os="linux"><b>linux</b><small>amd64 · arm64</small></a>
-      <a href="#" data-os="mac"><b>macos</b><small>apple silicon · intel</small></a>
-      <a href="#" data-os="win"><b>windows</b><small>amd64 · .exe</small></a>
+      <a href="/releases/v0.4.0/gnofy_linux_amd64.tar.gz" data-os="linux"><b>linux</b><small>amd64 · arm64</small></a>
+      <a href="/releases/v0.4.0/gnofy_darwin_arm64.tar.gz" data-os="mac"><b>macos</b><small>apple silicon · intel</small></a>
+      <a href="/releases/v0.4.0/gnofy_windows_amd64.zip" data-os="win"><b>windows</b><small>amd64 · arm64 · .exe</small></a>
     </div>
   </div>
 </section>
@@ -624,6 +624,7 @@ $('#copyclone').onclick=async ev=>{const b=ev.currentTarget;try{await navigator.
 /* ---------------- OS detect ---------------- */
 const ua=navigator.userAgent.toLowerCase();const me=ua.includes('win')?'win':ua.includes('mac')?'mac':'linux';
 document.querySelector(`[data-os="${me}"]`).classList.add('me');
+if(me==='win'){$('#inst').textContent='irm https://gnofy.xyz/install.ps1 | iex';}
 </script>
 </body>
 </html>
