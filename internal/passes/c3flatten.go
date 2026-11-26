@@ -213,12 +213,101 @@ func flattenInto(derived *ir.Contract, lin []*ir.Contract) {
 		}
 	}
 
-	// Construir lista final de funciones: constructores propios + versión más derivada + helpers super_*
-	var finalFns []*ir.Function
+	// Recolectar constructores y argumentos base en orden C3 (de más base a más derivado)
+	baseCtors := make(map[string]*ir.Function)
+	baseCtorArgs := make(map[string][]ir.Expr)
+	ancestorNames := make(map[string]bool, len(lin))
+	for _, anc := range lin[1:] {
+		ancestorNames[anc.Name] = true
+		for _, fn := range anc.Functions {
+			if fn.IsInit {
+				baseCtors[anc.Name] = fn
+			}
+		}
+	}
+	// Recolectar argumentos pasados en especificadores de herencia (de más derivado a más base)
+	for _, anc := range lin {
+		for baseName, args := range anc.BaseCtorArgs {
+			if _, exists := baseCtorArgs[baseName]; !exists {
+				baseCtorArgs[baseName] = args
+			}
+		}
+	}
+
+	// Construir lista final de funciones: constructor encadenado (si hay alguno) + métodos derivados + helpers super_*
+	var derivedCtor *ir.Function
 	for _, fn := range derived.Functions {
 		if fn.IsInit {
-			finalFns = append(finalFns, fn)
+			derivedCtor = cloneFunc(fn)
+			break
 		}
+	}
+
+	// Extraer invocaciones a constructores base desde los modifiers del constructor derivado
+	// (ej. `constructor(uint256 c) Ownable(msg.sender) { ... }`)
+	if derivedCtor != nil && len(derivedCtor.Modifiers) > 0 {
+		var remainingMods []ir.ModifierCall
+		for _, mc := range derivedCtor.Modifiers {
+			if ancestorNames[mc.Name] {
+				if _, exists := baseCtorArgs[mc.Name]; !exists {
+					baseCtorArgs[mc.Name] = mc.Args
+				}
+				continue
+			}
+			remainingMods = append(remainingMods, mc)
+		}
+		derivedCtor.Modifiers = remainingMods
+	}
+
+	// Encadenar constructores base en orden inverso C3: más base primero -> más derivado último
+	var preStmts []ir.Stmt
+	for i := len(lin) - 1; i >= 1; i-- {
+		base := lin[i]
+		bCtor, ok := baseCtors[base.Name]
+		if !ok {
+			continue
+		}
+		if len(bCtor.Params) == 0 {
+			preStmts = append(preStmts, &ir.BlockStmt{Stmts: slices.Clone(bCtor.Body)})
+			continue
+		}
+		args, hasArgs := baseCtorArgs[base.Name]
+		if hasArgs && len(args) == len(bCtor.Params) {
+			var block []ir.Stmt
+			for pi, p := range bCtor.Params {
+				block = append(block, &ir.VarDeclStmt{
+					Vars: []ir.Param{p},
+					Init: args[pi],
+				})
+			}
+			block = append(block, slices.Clone(bCtor.Body)...)
+			preStmts = append(preStmts, &ir.BlockStmt{Stmts: block})
+			continue
+		}
+		// Nunca omitir silenciosamente un constructor base parametrizado sin argumentos resueltos
+		h := &ir.Hole{
+			ID:               "ctor_" + base.Name,
+			Reason:           "UNRESOLVED_BASE_CONSTRUCTOR",
+			OriginalSolidity: fmt.Sprintf("base constructor %s(...) requires %d arg(s)", base.Name, len(bCtor.Params)),
+			ScopeSummary:     "constructor",
+		}
+		derived.Holes = append(derived.Holes, h)
+		preStmts = append(preStmts, &ir.HoleStmt{Hole: h})
+	}
+
+	var finalFns []*ir.Function
+	if len(preStmts) > 0 {
+		if derivedCtor == nil {
+			derivedCtor = &ir.Function{
+				Kind:       "constructor",
+				IsInit:     true,
+				Visibility: ir.VisPublic,
+			}
+		}
+		derivedCtor.Body = append(preStmts, derivedCtor.Body...)
+	}
+	if derivedCtor != nil {
+		finalFns = append(finalFns, derivedCtor)
 	}
 
 	superHelpers := make(map[string]*ir.Function)

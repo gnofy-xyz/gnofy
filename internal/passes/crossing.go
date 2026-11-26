@@ -27,8 +27,8 @@ func (CrossingPass) Run(mod *ir.Module) error {
 			scanStmts(c, fn.Body, &fnFlags)
 
 			// Las funciones públicas/externas que mutan estado o consultan msg.sender
-			// (y el constructor parametrizado Init) llevan `cur realm` en Gno.
-			if fn.IsInit && len(fn.Params) > 0 {
+			// (y el constructor Init con args, o init(cur realm) si usa msg.sender) llevan `cur realm` en Gno.
+			if fn.IsInit && (len(fn.Params) > 0 || fnFlags.usesMsgSender) {
 				fn.IsCrossing = true
 			} else if (fn.Visibility == ir.VisPublic || fn.Visibility == ir.VisExternal) && (!fn.ViewOrPure || fnFlags.usesMsgSender) {
 				fn.IsCrossing = true
@@ -143,6 +143,9 @@ func scanExpr(c *ir.Contract, e ir.Expr, flags *fnScanFlags) {
 		scanExpr(c, ex.Left, flags)
 		scanExpr(c, ex.Right, flags)
 	case *ir.UnaryExpr:
+		if ex.Op == "++" || ex.Op == "--" || ex.Op == "-" {
+			c.UsesSolrt = true
+		}
 		scanExpr(c, ex.Operand, flags)
 	case *ir.CallExpr:
 		if id, ok := ex.Callee.(*ir.IdentExpr); ok {

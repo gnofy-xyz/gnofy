@@ -220,6 +220,10 @@ func analyzeContract(src *solc.SourceOutput, contract *solc.Node, topLevelEvents
 
 	if summary.TotalFunctions > 0 {
 		summary.DeterministicPct = (float64(summary.CleanFunctions) / float64(summary.TotalFunctions)) * 100.0
+		// Si existen holes a nivel de contrato (p.ej. variable de estado int256), nunca reportar 100%
+		if summary.HoleCount > 0 && summary.DeterministicPct == 100.0 {
+			summary.DeterministicPct = 0.0
+		}
 	} else if summary.HoleCount == 0 {
 		summary.DeterministicPct = 100.0
 	}
@@ -237,6 +241,17 @@ func analyzeContract(src *solc.SourceOutput, contract *solc.Node, topLevelEvents
 }
 
 func analyzeVariableDecl(src *solc.SourceOutput, contractName string, v *solc.Node, summary *ContractSummary, rep *Report) {
+	if wideType, ok := detectWideSignedType(v.TypeName, v.TypeDescriptions); ok {
+		summary.HoleCount++
+		rep.addFinding(Finding{
+			Level:      LevelHole,
+			Code:       "UNSUPPORTED_WIDE_SIGNED_INT",
+			Contract:   contractName,
+			Message:    fmt.Sprintf("Entero con signo >64 bits (%s) en variable de estado '%s' (no existe I256 en solrt todavía)", wideType, v.Name),
+			Location:   solc.SrcLocation(src.Path, src.Content, v.Src),
+			Suggestion: "Usa int64 o menor si cabe en 64 bits, o resuelve con --ai=assist / implementación I256 para evitar recorte silencioso.",
+		})
+	}
 	initNode := v.InitialValue
 	if initNode == nil {
 		initNode = v.Value.Node
@@ -317,12 +332,43 @@ func analyzeFunction(
 		})
 	}
 
+	// Comprobar parámetros y retornos por enteros con signo >64 bits (int72..int256)
+	for _, p := range append(fn.Parameters.ParamNodes(), fn.ReturnParameters.ParamNodes()...) {
+		if wideType, ok := detectWideSignedType(p.TypeName, p.TypeDescriptions); ok {
+			hasHole = true
+			summary.HoleCount++
+			rep.addFinding(Finding{
+				Level:      LevelHole,
+				Code:       "UNSUPPORTED_WIDE_SIGNED_INT",
+				Contract:   contractName,
+				Function:   fnLabel,
+				Message:    fmt.Sprintf("Entero con signo >64 bits (%s) en firma de '%s'", wideType, fnLabel),
+				Location:   solc.SrcLocation(src.Path, src.Content, p.Src),
+				Suggestion: "gnofy no recorta int256 a int64 en silencio; usa int64 o resuelve explícitamente.",
+			})
+		}
+	}
+
 	if fn.Body == nil {
 		return hasHole
 	}
 
 	solc.Walk(fn.Body, func(n *solc.Node) bool {
 		switch n.NodeType {
+		case "VariableDeclaration":
+			if wideType, ok := detectWideSignedType(n.TypeName, n.TypeDescriptions); ok {
+				hasHole = true
+				summary.HoleCount++
+				rep.addFinding(Finding{
+					Level:      LevelHole,
+					Code:       "UNSUPPORTED_WIDE_SIGNED_INT",
+					Contract:   contractName,
+					Function:   fnLabel,
+					Message:    fmt.Sprintf("Variable local con signo >64 bits (%s %s) en '%s'", wideType, n.Name, fnLabel),
+					Location:   solc.SrcLocation(src.Path, src.Content, n.Src),
+					Suggestion: "gnofy no recorta int256 a int64 en silencio; usa int64 o resuelve explícitamente.",
+				})
+			}
 		case "InlineAssembly":
 			hasHole = true
 			summary.HoleCount++
@@ -531,6 +577,44 @@ func isAddressType(n *solc.Node) bool {
 	}
 	ti := n.TypeDescriptions.TypeIdentifier
 	return strings.HasPrefix(ti, "t_address") || strings.Contains(n.TypeDescriptions.TypeString, "address")
+}
+
+func detectWideSignedType(tn *solc.Node, td *solc.TypeDescriptions) (string, bool) {
+	check := func(s string) (string, bool) {
+		for _, tok := range strings.FieldsFunc(s, func(r rune) bool {
+			return !((r >= 'a' && r <= 'z') || (r >= '0' && r <= '9'))
+		}) {
+			if tok == "int" {
+				return "int256", true
+			}
+			if strings.HasPrefix(tok, "int") && len(tok) > 3 {
+				bits := 0
+				valid := true
+				for i := 3; i < len(tok); i++ {
+					if tok[i] < '0' || tok[i] > '9' {
+						valid = false
+						break
+					}
+					bits = bits*10 + int(tok[i]-'0')
+				}
+				if valid && bits > 64 {
+					return tok, true
+				}
+			}
+		}
+		return "", false
+	}
+	if tn != nil && tn.Name != "" {
+		if w, ok := check(tn.Name); ok {
+			return w, true
+		}
+	}
+	if td != nil && td.TypeString != "" {
+		if w, ok := check(td.TypeString); ok {
+			return w, true
+		}
+	}
+	return "", false
 }
 
 func detectImportStandard(imp string, standards map[string]struct{}) {

@@ -29,20 +29,21 @@ const (
 
 // Contract representa un contrato, librería o interfaz en la IR.
 type Contract struct {
-	Name       string
-	GoPkgName  string
-	Kind       ContractKind
-	Abstract   bool
-	BaseNames  []string
-	Enums      []*EnumDef
-	Structs    []*StructDef
-	Events     []*EventDef
-	Errors     []*ErrorDef
-	StateVars  []*StateVar
-	Modifiers  []*ModifierDef
-	Functions  []*Function
-	Holes      []*Hole
-	SourcePath string
+	Name         string
+	GoPkgName    string
+	Kind         ContractKind
+	Abstract     bool
+	BaseNames    []string
+	BaseCtorArgs map[string][]Expr
+	Enums        []*EnumDef
+	Structs      []*StructDef
+	Events       []*EventDef
+	Errors       []*ErrorDef
+	StateVars    []*StateVar
+	Modifiers    []*ModifierDef
+	Functions    []*Function
+	Holes        []*Hole
+	SourcePath   string
 
 	// Metadatos rellenados por pases (crossing / naming / standards)
 	UsesReentrancyGuard bool
@@ -158,6 +159,33 @@ func (t TypeRef) IsU256() bool {
 // IsU64OrSmaller indica si cabe en uint64 nativo con helpers checked.
 func (t TypeRef) IsU64OrSmaller() bool {
 	return t.Kind == "uint" && t.BitSize > 0 && t.BitSize <= 64
+}
+
+// IsSigned64OrSmaller indica si es un entero con signo soportado (int8..int64).
+func (t TypeRef) IsSigned64OrSmaller() bool {
+	return t.Kind == "int" && t.BitSize > 0 && t.BitSize <= 64
+}
+
+// IsWideSigned indica si es un entero con signo >64 bits (int72..int256) sin equivalencia exacta todavía.
+func (t TypeRef) IsWideSigned() bool {
+	return t.Kind == "int" && t.BitSize > 64
+}
+
+// ContainsWideSigned inspecciona recursivamente si el tipo (o sus elementos/valores) usa intN con N > 64.
+func (t TypeRef) ContainsWideSigned() bool {
+	if t.IsWideSigned() {
+		return true
+	}
+	if t.KeyType != nil && t.KeyType.ContainsWideSigned() {
+		return true
+	}
+	if t.ValueType != nil && t.ValueType.ContainsWideSigned() {
+		return true
+	}
+	if t.ElemType != nil && t.ElemType.ContainsWideSigned() {
+		return true
+	}
+	return false
 }
 
 // Hole representa un fragmento sin traducción determinista 1:1.

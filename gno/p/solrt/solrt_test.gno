@@ -47,3 +47,45 @@ func TestOrderedMap(t *testing.T) {
 		t.Fatalf("expected alice=750, got %s", m.GetU256("alice").String())
 	}
 }
+
+func expectSolrtPanic(t *testing.T, label string, fn func()) {
+	t.Helper()
+	panicked := false
+	func() {
+		defer func() {
+			if recover() != nil {
+				panicked = true
+			}
+		}()
+		fn()
+	}()
+	if !panicked {
+		t.Fatalf("%s: expected panic", label)
+	}
+}
+
+func TestExactWidthOverflowChecks(t *testing.T) {
+	if SafeAddU8(200, 55) != 255 {
+		t.Fatalf("SafeAddU8(200, 55) != 255")
+	}
+	expectSolrtPanic(t, "uint8 overflow", func() { SafeAddU8(255, 1) })
+	expectSolrtPanic(t, "uint16 overflow", func() { SafeAddU16(65535, 1) })
+	expectSolrtPanic(t, "uint32 overflow", func() { SafeAddU32(4294967295, 1) })
+
+	// uint128 límite exacto: 2^128 - 1 OK, +1 panic
+	maxU128 := U256FromU64(1).Pow(0)
+	_ = maxU128
+	two128 := U256FromU64(2).Pow(128)
+	two128Minus1 := two128.Sub(U256FromU64(1))
+	two128Minus1.CheckBits(128) // OK
+	expectSolrtPanic(t, "uint128 overflow", func() { two128.CheckBits(128) })
+
+	// Signed checked arithmetic
+	if SafeSubI64(10, 25) != -15 {
+		t.Fatalf("SafeSubI64(10, 25) != -15")
+	}
+	expectSolrtPanic(t, "int8 overflow", func() { SafeAddI8(127, 1) })
+	expectSolrtPanic(t, "int8 underflow", func() { SafeSubI8(-128, 1) })
+	expectSolrtPanic(t, "int64 min/-1 div overflow", func() { SafeDivI64(minInt64, -1) })
+	expectSolrtPanic(t, "int64 min neg overflow", func() { SafeNegI64(minInt64) })
+}

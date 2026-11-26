@@ -83,3 +83,17 @@ func TestAnalyzeUnsupportedYul(t *testing.T) {
 	}
 }
 
+func TestAnalyzeWideSignedIntIsHole(t *testing.T) {
+	rep := compileAndAnalyze(t, "testdata/contracts/WideSignedInt.sol")
+	if len(rep.Contracts) != 1 {
+		t.Fatalf("esperaba 1 contrato, obtuve %d", len(rep.Contracts))
+	}
+	c := rep.Contracts[0]
+	if c.HoleCount == 0 || c.DeterministicPct == 100.0 {
+		t.Fatalf("WideSignedInt (int256) NO debe reportar 100%% determinista ni 0 holes: %+v", c)
+	}
+	if !hasCode(rep.Findings, "UNSUPPORTED_WIDE_SIGNED_INT") {
+		t.Fatalf("esperaba finding UNSUPPORTED_WIDE_SIGNED_INT, findings=%+v", rep.Findings)
+	}
+}
+

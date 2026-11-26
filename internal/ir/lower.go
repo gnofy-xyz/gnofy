@@ -42,10 +42,11 @@ func lowerSourceUnit(src *solc.SourceOutput, mod *Module) {
 
 func lowerContract(src *solc.SourceOutput, n *solc.Node, topEvents []*EventDef, topErrors []*ErrorDef) *Contract {
 	c := &Contract{
-		Name:       n.Name,
-		Kind:       ContractKind(n.ContractKind),
-		Abstract:   n.Abstract,
-		SourcePath: src.Path,
+		Name:         n.Name,
+		Kind:         ContractKind(n.ContractKind),
+		Abstract:     n.Abstract,
+		BaseCtorArgs: make(map[string][]Expr),
+		SourcePath:   src.Path,
 	}
 	c.Events = append(c.Events, topEvents...)
 	c.Errors = append(c.Errors, topErrors...)
@@ -55,6 +56,13 @@ func lowerContract(src *solc.SourceOutput, n *solc.Node, topEvents []*EventDef, 
 			c.BaseNames = append(c.BaseNames, b.BaseName.Name)
 			if b.BaseName.Name == "ReentrancyGuard" {
 				c.UsesReentrancyGuard = true
+			}
+			if len(b.Arguments) > 0 {
+				var args []Expr
+				for _, a := range b.Arguments {
+					args = append(args, lowerExpr(src, c, nil, a))
+				}
+				c.BaseCtorArgs[b.BaseName.Name] = args
 			}
 		}
 	}
@@ -91,6 +99,10 @@ func lowerContract(src *solc.SourceOutput, n *solc.Node, topEvents []*EventDef, 
 				Visibility: Visibility(member.Visibility),
 				Constant:   member.Constant,
 				Immutable:  member.Immutable,
+			}
+			if sv.Type.ContainsWideSigned() {
+				h := newHole("UNSUPPORTED_WIDE_SIGNED_INT", extractSnippet(src.Content, member.Src), member.Name)
+				c.Holes = append(c.Holes, h)
 			}
 			initNode := member.InitialValue
 			if initNode == nil {
@@ -167,6 +179,16 @@ func lowerFunction(src *solc.SourceOutput, c *Contract, n *solc.Node) *Function 
 		return fn
 	}
 
+	// Si la firma usa enteros con signo >64 bits (int72..int256), no recortar en silencio a int64: emitir Hole.
+	for _, p := range append(fn.Params, fn.Returns...) {
+		if p.Type.ContainsWideSigned() {
+			h := newHole("UNSUPPORTED_WIDE_SIGNED_INT", extractSnippet(src.Content, n.Src), fnScopeName(fn))
+			recordHole(c, fn, h)
+			fn.Body = []Stmt{&HoleStmt{Hole: h}}
+			return fn
+		}
+	}
+
 	if n.Body != nil {
 		fn.Body = lowerBlockStmts(src, c, fn, n.Body)
 	}
@@ -232,9 +254,15 @@ func lowerStmt(src *solc.SourceOutput, c *Contract, fn *Function, n *solc.Node) 
 			if d.StorageLocation == "storage" {
 				stmt.IsStorage = true
 			}
+			vt := lowerTypeName(d.TypeName, d.TypeDescriptions)
+			if vt.ContainsWideSigned() {
+				h := newHole("UNSUPPORTED_WIDE_SIGNED_INT", extractSnippet(src.Content, n.Src), fnScopeName(fn))
+				recordHole(c, fn, h)
+				return &HoleStmt{Hole: h}
+			}
 			stmt.Vars = append(stmt.Vars, Param{
 				Name: d.Name,
-				Type: lowerTypeName(d.TypeName, d.TypeDescriptions),
+				Type: vt,
 			})
 		}
 		if n.InitialValue != nil {

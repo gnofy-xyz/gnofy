@@ -70,6 +70,28 @@ func (u U256) Uint64() uint64 {
 	return u.w[0]
 }
 
+// CheckBits verifica que u cabe en exactamente 'bits' bits sin signo (p.ej. uint96, uint128, uint160).
+// Hace panic si cualquier bit en posición >= bits es 1 (semántica Solidity >=0.8).
+func (u U256) CheckBits(bits uint) U256 {
+	if bits == 0 || bits >= 256 {
+		return u
+	}
+	wordIdx := int(bits / 64)
+	bitOff := bits % 64
+	if bitOff != 0 {
+		if (u.w[wordIdx] >> bitOff) != 0 {
+			panic("solrt: uintN overflow")
+		}
+		wordIdx++
+	}
+	for i := wordIdx; i < 4; i++ {
+		if u.w[i] != 0 {
+			panic("solrt: uintN overflow")
+		}
+	}
+	return u
+}
+
 // UncheckedAdd suma con wrap-around (para bloques unchecked {}).
 func (u U256) UncheckedAdd(v U256) U256 {
 	res, _ := addWithCarry256(u, v)

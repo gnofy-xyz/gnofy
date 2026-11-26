@@ -15,12 +15,23 @@ type NamingPass struct{}
 func (NamingPass) Name() string { return "naming" }
 
 var goKeywords = map[string]bool{
+	// Keywords Go / Gno
 	"break": true, "case": true, "chan": true, "const": true, "continue": true,
 	"default": true, "defer": true, "else": true, "fallthrough": true, "for": true,
 	"func": true, "go": true, "goto": true, "if": true, "import": true,
 	"interface": true, "map": true, "package": true, "range": true, "return": true,
 	"select": true, "struct": true, "switch": true, "type": true, "var": true,
 	"realm": true, "cur": true,
+	// Builtins del universo Gno que NO pueden ser sombreados (gnoPreprocessError)
+	"append": true, "cap": true, "close": true, "complex": true, "copy": true,
+	"delete": true, "imag": true, "len": true, "make": true, "new": true,
+	"panic": true, "print": true, "println": true, "real": true, "recover": true,
+	"revive": true, "cross": true, "address": true, "any": true, "bool": true,
+	"byte": true, "error": true, "rune": true, "string": true, "true": true,
+	"false": true, "nil": true, "iota": true,
+	"int": true, "int8": true, "int16": true, "int32": true, "int64": true,
+	"uint": true, "uint8": true, "uint16": true, "uint32": true, "uint64": true,
+	"uintptr": true, "float32": true, "float64": true,
 }
 
 func (NamingPass) Run(mod *ir.Module) error {

@@ -386,9 +386,11 @@ func (g *Generator) emitContractSource(ctx context.Context, c *ir.Contract) ([]b
 
 func detectSolrtUsage(body string) bool {
 	for _, sym := range []string{
-		"U256", "Require(", "Revert(", "Assert(", "SafeAddU64(", "SafeSubU64(",
-		"SafeMulU64(", "SafeDivU64(", "SafeModU64(", "MulDiv(", "NewOrderedMap(",
-		"KeyJoin(", "FormatU64(", "FormatI64(", "FormatBool(",
+		"U256", "Require(", "Revert(", "Assert(",
+		"SafeAddU", "SafeSubU", "SafeMulU", "SafeDivU", "SafeModU",
+		"SafeAddI", "SafeSubI", "SafeMulI", "SafeDivI", "SafeModI", "SafeNegI",
+		"CheckUnsignedBitsU64(", "CheckSignedBitsI64(", ".CheckBits(",
+		"MulDiv(", "NewOrderedMap(", "KeyJoin(", "FormatU64(", "FormatI64(", "FormatBool(",
 		"ERC20Token", "ResolveERC20(", "SafeERC20Transfer(", "SafeERC20TransferFrom(",
 	} {
 		if strings.Contains(body, sym) {
@@ -478,7 +480,30 @@ func (ec *emitCtx) emitStmts(buf *bytes.Buffer, stmts []ir.Stmt, indent int) {
 	for _, s := range stmts {
 		switch st := s.(type) {
 		case *ir.BlockStmt:
-			ec.emitStmts(buf, st.Stmts, indent)
+			hasDecl := false
+			for _, inner := range st.Stmts {
+				if _, ok := inner.(*ir.VarDeclStmt); ok {
+					hasDecl = true
+					break
+				}
+			}
+			if hasDecl {
+				savedVars := make(map[string]ir.TypeRef, len(ec.localVars))
+				for k, v := range ec.localVars {
+					savedVars[k] = v
+				}
+				savedNames := make(map[string]string, len(ec.localName))
+				for k, v := range ec.localName {
+					savedNames[k] = v
+				}
+				fmt.Fprintf(buf, "%s{\n", pad)
+				ec.emitStmts(buf, st.Stmts, indent+1)
+				fmt.Fprintf(buf, "%s}\n", pad)
+				ec.localVars = savedVars
+				ec.localName = savedNames
+			} else {
+				ec.emitStmts(buf, st.Stmts, indent)
+			}
 
 		case *ir.UncheckedStmt:
 			prev := ec.unchecked
@@ -633,12 +658,27 @@ func (ec *emitCtx) emitVarDecl(buf *bytes.Buffer, st *ir.VarDeclStmt, pad string
 	}
 }
 
+var gnoReservedLocals = map[string]bool{
+	"break": true, "case": true, "chan": true, "const": true, "continue": true,
+	"default": true, "defer": true, "else": true, "fallthrough": true, "for": true,
+	"func": true, "go": true, "goto": true, "if": true, "import": true,
+	"interface": true, "map": true, "package": true, "range": true, "return": true,
+	"select": true, "struct": true, "switch": true, "type": true, "var": true,
+	"realm": true, "cur": true,
+	"append": true, "cap": true, "close": true, "complex": true, "copy": true,
+	"delete": true, "imag": true, "len": true, "make": true, "new": true,
+	"panic": true, "print": true, "println": true, "real": true, "recover": true,
+	"revive": true, "cross": true, "address": true, "any": true, "bool": true,
+	"byte": true, "error": true, "rune": true, "string": true, "true": true,
+	"false": true, "nil": true, "iota": true,
+}
+
 func (ec *emitCtx) bindLocalName(solName string, typ ir.TypeRef) string {
 	if solName == "_" {
 		return "_"
 	}
 	goName := unexportCamel(solName)
-	if ec.stateGoNames[goName] {
+	if ec.stateGoNames[goName] || gnoReservedLocals[goName] {
 		goName += "Local"
 	}
 	ec.localVars[solName] = typ
@@ -828,19 +868,30 @@ func (ec *emitCtx) emitExpr(e ir.Expr) string {
 		}
 
 	case *ir.UnaryExpr:
+		// Literal negativo (p.ej. -1, -128): mantener como literal sin SafeNeg
+		if ex.Op == "-" {
+			if _, isLit := ex.Operand.(*ir.LiteralExpr); isLit {
+				return "-" + ec.emitExpr(ex.Operand)
+			}
+		}
 		operand := ec.emitExpr(ex.Operand)
 		opType := ec.resolveExprType(ex.Operand)
 		if ex.Op == "++" {
-			if opType.IsU256() {
-				return fmt.Sprintf("%s = %s.Add(%sU256FromU64(1))", operand, operand, ec.rtPrefix)
+			if ec.unchecked && (opType.IsU64OrSmaller() || opType.IsSigned64OrSmaller()) {
+				return fmt.Sprintf("%s++", operand)
 			}
-			return fmt.Sprintf("%s++", operand)
+			one := ec.emitLiteral(&ir.LiteralExpr{Kind: "number", Value: "1"}, opType)
+			return fmt.Sprintf("%s = %s", operand, ec.emitArith("+", operand, one, opType))
 		}
 		if ex.Op == "--" {
-			if opType.IsU256() {
-				return fmt.Sprintf("%s = %s.Sub(%sU256FromU64(1))", operand, operand, ec.rtPrefix)
+			if ec.unchecked && (opType.IsU64OrSmaller() || opType.IsSigned64OrSmaller()) {
+				return fmt.Sprintf("%s--", operand)
 			}
-			return fmt.Sprintf("%s--", operand)
+			one := ec.emitLiteral(&ir.LiteralExpr{Kind: "number", Value: "1"}, opType)
+			return fmt.Sprintf("%s = %s", operand, ec.emitArith("-", operand, one, opType))
+		}
+		if ex.Op == "-" && !ec.unchecked && opType.IsSigned64OrSmaller() {
+			return ec.emitSignedNeg(operand, opType)
 		}
 		return fmt.Sprintf("%s%s", ex.Op, operand)
 
@@ -1009,6 +1060,11 @@ func (ec *emitCtx) emitExprAs(e ir.Expr, target ir.TypeRef) string {
 	if lit, ok := e.(*ir.LiteralExpr); ok {
 		return ec.emitLiteral(lit, target)
 	}
+	if un, ok := e.(*ir.UnaryExpr); ok && un.Op == "-" {
+		if lit, isLit := un.Operand.(*ir.LiteralExpr); isLit && lit.Kind == "number" {
+			return "-" + lit.Value
+		}
+	}
 	curType := ec.resolveExprType(e)
 	raw := ec.emitExpr(e)
 
@@ -1017,6 +1073,12 @@ func (ec *emitCtx) emitExprAs(e ir.Expr, target ir.TypeRef) string {
 			return fmt.Sprintf("%sU256FromU64(%s)", ec.rtPrefix, raw)
 		}
 		return fmt.Sprintf("%sU256FromU64(uint64(%s))", ec.rtPrefix, raw)
+	}
+	if target.IsU64OrSmaller() && curType.IsU64OrSmaller() && ec.gnoType(target) != ec.gnoType(curType) {
+		return fmt.Sprintf("%s(%s)", ec.gnoType(target), raw)
+	}
+	if target.IsSigned64OrSmaller() && curType.IsSigned64OrSmaller() && ec.gnoType(target) != ec.gnoType(curType) {
+		return fmt.Sprintf("%s(%s)", ec.gnoType(target), raw)
 	}
 	return raw
 }
@@ -1045,47 +1107,128 @@ func (ec *emitCtx) emitLiteral(lit *ir.LiteralExpr, target ir.TypeRef) string {
 
 func (ec *emitCtx) emitArith(op, left, right string, typ ir.TypeRef) string {
 	if typ.IsU256() {
+		var expr string
 		switch op {
 		case "+":
 			if ec.unchecked {
-				return fmt.Sprintf("%s.UncheckedAdd(%s)", left, right)
+				expr = fmt.Sprintf("%s.UncheckedAdd(%s)", left, right)
+			} else {
+				expr = fmt.Sprintf("%s.Add(%s)", left, right)
 			}
-			return fmt.Sprintf("%s.Add(%s)", left, right)
 		case "-":
 			if ec.unchecked {
-				return fmt.Sprintf("%s.UncheckedSub(%s)", left, right)
+				expr = fmt.Sprintf("%s.UncheckedSub(%s)", left, right)
+			} else {
+				expr = fmt.Sprintf("%s.Sub(%s)", left, right)
 			}
-			return fmt.Sprintf("%s.Sub(%s)", left, right)
 		case "*":
 			if ec.unchecked {
-				return fmt.Sprintf("%s.UncheckedMul(%s)", left, right)
+				expr = fmt.Sprintf("%s.UncheckedMul(%s)", left, right)
+			} else {
+				expr = fmt.Sprintf("%s.Mul(%s)", left, right)
 			}
-			return fmt.Sprintf("%s.Mul(%s)", left, right)
 		case "/":
-			return fmt.Sprintf("%s.Div(%s)", left, right)
+			expr = fmt.Sprintf("%s.Div(%s)", left, right)
 		case "%":
-			return fmt.Sprintf("%s.Mod(%s)", left, right)
+			expr = fmt.Sprintf("%s.Mod(%s)", left, right)
 		case "**":
-			return fmt.Sprintf("%s.Pow(%s.Uint64())", left, right)
+			expr = fmt.Sprintf("%s.Pow(%s.Uint64())", left, right)
+		default:
+			return fmt.Sprintf("(%s %s %s)", left, op, right)
 		}
+		// Comprobar límite exacto de N bits para uint72..uint248 (p.ej. uint96, uint128) fuera de unchecked
+		if !ec.unchecked && typ.BitSize > 64 && typ.BitSize < 256 {
+			return fmt.Sprintf("%s.CheckBits(%d)", expr, typ.BitSize)
+		}
+		return expr
 	}
 
 	if typ.IsU64OrSmaller() && !ec.unchecked {
-		switch op {
-		case "+":
-			return fmt.Sprintf("%sSafeAddU64(%s, %s)", ec.rtPrefix, left, right)
-		case "-":
-			return fmt.Sprintf("%sSafeSubU64(%s, %s)", ec.rtPrefix, left, right)
-		case "*":
-			return fmt.Sprintf("%sSafeMulU64(%s, %s)", ec.rtPrefix, left, right)
-		case "/":
-			return fmt.Sprintf("%sSafeDivU64(%s, %s)", ec.rtPrefix, left, right)
-		case "%":
-			return fmt.Sprintf("%sSafeModU64(%s, %s)", ec.rtPrefix, left, right)
+		opName := arithHelperOpName(op)
+		if opName != "" {
+			switch typ.BitSize {
+			case 8:
+				return fmt.Sprintf("%sSafe%sU8(%s, %s)", ec.rtPrefix, opName, left, right)
+			case 16:
+				return fmt.Sprintf("%sSafe%sU16(%s, %s)", ec.rtPrefix, opName, left, right)
+			case 32:
+				return fmt.Sprintf("%sSafe%sU32(%s, %s)", ec.rtPrefix, opName, left, right)
+			case 64:
+				return fmt.Sprintf("%sSafe%sU64(%s, %s)", ec.rtPrefix, opName, left, right)
+			default:
+				// Anchos intermedios (uint24, uint40, uint48, uint56): usar uint64 + límite exacto N bits
+				inner := fmt.Sprintf("%sSafe%sU64(uint64(%s), uint64(%s))", ec.rtPrefix, opName, left, right)
+				checked := fmt.Sprintf("%sCheckUnsignedBitsU64(%s, %d)", ec.rtPrefix, inner, typ.BitSize)
+				gnoT := ec.gnoType(typ)
+				if gnoT != "uint64" {
+					return fmt.Sprintf("%s(%s)", gnoT, checked)
+				}
+				return checked
+			}
+		}
+	}
+
+	if typ.IsSigned64OrSmaller() && !ec.unchecked {
+		opName := arithHelperOpName(op)
+		if opName != "" {
+			switch typ.BitSize {
+			case 8:
+				return fmt.Sprintf("%sSafe%sI8(%s, %s)", ec.rtPrefix, opName, left, right)
+			case 16:
+				return fmt.Sprintf("%sSafe%sI16(%s, %s)", ec.rtPrefix, opName, left, right)
+			case 32:
+				return fmt.Sprintf("%sSafe%sI32(%s, %s)", ec.rtPrefix, opName, left, right)
+			case 64:
+				return fmt.Sprintf("%sSafe%sI64(%s, %s)", ec.rtPrefix, opName, left, right)
+			default:
+				inner := fmt.Sprintf("%sSafe%sI64(int64(%s), int64(%s))", ec.rtPrefix, opName, left, right)
+				checked := fmt.Sprintf("%sCheckSignedBitsI64(%s, %d)", ec.rtPrefix, inner, typ.BitSize)
+				gnoT := ec.gnoType(typ)
+				if gnoT != "int64" {
+					return fmt.Sprintf("%s(%s)", gnoT, checked)
+				}
+				return checked
+			}
 		}
 	}
 
 	return fmt.Sprintf("(%s %s %s)", left, op, right)
+}
+
+func arithHelperOpName(op string) string {
+	switch op {
+	case "+":
+		return "Add"
+	case "-":
+		return "Sub"
+	case "*":
+		return "Mul"
+	case "/":
+		return "Div"
+	case "%":
+		return "Mod"
+	default:
+		return ""
+	}
+}
+
+func (ec *emitCtx) emitSignedNeg(operand string, typ ir.TypeRef) string {
+	switch typ.BitSize {
+	case 8:
+		return fmt.Sprintf("%sSafeNegI8(%s)", ec.rtPrefix, operand)
+	case 16:
+		return fmt.Sprintf("%sSafeNegI16(%s)", ec.rtPrefix, operand)
+	case 32:
+		return fmt.Sprintf("%sSafeNegI32(%s)", ec.rtPrefix, operand)
+	case 64:
+		return fmt.Sprintf("%sSafeNegI64(%s)", ec.rtPrefix, operand)
+	default:
+		inner := fmt.Sprintf("%sCheckSignedBitsI64(%sSafeNegI64(int64(%s)), %d)", ec.rtPrefix, ec.rtPrefix, operand, typ.BitSize)
+		if gnoT := ec.gnoType(typ); gnoT != "int64" {
+			return fmt.Sprintf("%s(%s)", gnoT, inner)
+		}
+		return inner
+	}
 }
 
 func (ec *emitCtx) emitU256Cmp(op, left, right string) string {
@@ -1174,7 +1317,27 @@ func (ec *emitCtx) mapAccessorNames(valType ir.TypeRef) (getter, setter string) 
 	case valType.IsU256():
 		return "GetU256", "SetU256"
 	case valType.Kind == "uint":
-		return "GetU64", "SetU64"
+		switch {
+		case valType.BitSize <= 8:
+			return "GetU8", "SetU8"
+		case valType.BitSize <= 16:
+			return "GetU16", "SetU16"
+		case valType.BitSize <= 32:
+			return "GetU32", "SetU32"
+		default:
+			return "GetU64", "SetU64"
+		}
+	case valType.IsSigned64OrSmaller():
+		switch {
+		case valType.BitSize <= 8:
+			return "GetI8", "SetI8"
+		case valType.BitSize <= 16:
+			return "GetI16", "SetI16"
+		case valType.BitSize <= 32:
+			return "GetI32", "SetI32"
+		default:
+			return "GetI64", "SetI64"
+		}
 	case valType.Kind == "bool":
 		return "GetBool", "SetBool"
 	case valType.Kind == "string":
@@ -1247,6 +1410,8 @@ func (ec *emitCtx) gnoType(t ir.TypeRef) string {
 		default:
 			return "uint64"
 		}
+	case t.IsWideSigned():
+		return "any /* UNSUPPORTED_WIDE_SIGNED_INT */"
 	case t.Kind == "int":
 		switch {
 		case t.BitSize <= 8:
@@ -1302,7 +1467,7 @@ func buildEmbeddedSolrt(pkgName string) ([]byte, error) {
 	fmt.Fprintf(&buf, "package %s\n\n", pkgName)
 	buf.WriteString("import \"strconv\"\n\n")
 
-	order := []string{"p/solrt/solrt.gno", "p/solrt/u256.gno", "p/solrt/map.gno", "p/solrt/erc20.gno"}
+	order := []string{"p/solrt/solrt.gno", "p/solrt/signed.gno", "p/solrt/u256.gno", "p/solrt/map.gno", "p/solrt/erc20.gno"}
 	for _, name := range order {
 		raw, err := fs.ReadFile(gnoruntime.SolrtFS, name)
 		if err != nil {

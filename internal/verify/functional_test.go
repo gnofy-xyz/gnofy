@@ -72,6 +72,18 @@ func TestFunctionalGnoVMLifecycles(t *testing.T) {
 			idiomatic: true,
 			flowTest:  "testdata/functional/simpleerc20_idiomatic_flow_test.gno",
 		},
+		{
+			name:      "OwnedVault_BaseConstructors",
+			solFile:   "testdata/contracts/OwnedVault.sol",
+			idiomatic: false,
+			flowTest:  "testdata/functional/ownedvault_flow_test.gno",
+		},
+		{
+			name:      "ExactWidthInts_CheckedOverflow",
+			solFile:   "testdata/contracts/ExactWidthInts.sol",
+			idiomatic: false,
+			flowTest:  "testdata/functional/exactwidthints_flow_test.gno",
+		},
 	}
 
 	v := &verify.Verifier{BinaryPath: gnoBin}

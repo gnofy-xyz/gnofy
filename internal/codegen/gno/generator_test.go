@@ -140,6 +140,18 @@ func TestConvertUnsupportedYulEmitsSafeStubs(t *testing.T) {
 	}
 }
 
+func TestConvertWideSignedIntEmitsHoleInsteadOfTruncating(t *testing.T) {
+	files := convertFixture(t, "testdata/contracts/WideSignedInt.sol")
+	src := findFile(t, files, "widesignedint.gno")
+
+	if !strings.Contains(src, "UNSUPPORTED_WIDE_SIGNED_INT") {
+		t.Fatalf("esperaba marcador/stub UNSUPPORTED_WIDE_SIGNED_INT en widesignedint.gno:\n%s", src)
+	}
+	if strings.Contains(src, "delta int64") {
+		t.Fatalf("widesignedint.gno recortó int256 a int64 silenciosamente:\n%s", src)
+	}
+}
+
 func TestConvertMultiInherit(t *testing.T) {
 	files := convertFixture(t, "testdata/contracts/MultiInherit.sol")
 	src := findFile(t, files, "multiinherit.gno")

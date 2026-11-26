@@ -85,6 +85,76 @@ func (m *OrderedMap) SetU64(key string, val uint64) {
 	m.Set(key, val)
 }
 
+func (m *OrderedMap) GetU8(key string) uint8 {
+	v, ok := m.Get(key)
+	if !ok || v == nil {
+		return 0
+	}
+	return v.(uint8)
+}
+
+func (m *OrderedMap) SetU8(key string, val uint8) { m.Set(key, val) }
+
+func (m *OrderedMap) GetU16(key string) uint16 {
+	v, ok := m.Get(key)
+	if !ok || v == nil {
+		return 0
+	}
+	return v.(uint16)
+}
+
+func (m *OrderedMap) SetU16(key string, val uint16) { m.Set(key, val) }
+
+func (m *OrderedMap) GetU32(key string) uint32 {
+	v, ok := m.Get(key)
+	if !ok || v == nil {
+		return 0
+	}
+	return v.(uint32)
+}
+
+func (m *OrderedMap) SetU32(key string, val uint32) { m.Set(key, val) }
+
+func (m *OrderedMap) GetI8(key string) int8 {
+	v, ok := m.Get(key)
+	if !ok || v == nil {
+		return 0
+	}
+	return v.(int8)
+}
+
+func (m *OrderedMap) SetI8(key string, val int8) { m.Set(key, val) }
+
+func (m *OrderedMap) GetI16(key string) int16 {
+	v, ok := m.Get(key)
+	if !ok || v == nil {
+		return 0
+	}
+	return v.(int16)
+}
+
+func (m *OrderedMap) SetI16(key string, val int16) { m.Set(key, val) }
+
+func (m *OrderedMap) GetI32(key string) int32 {
+	v, ok := m.Get(key)
+	if !ok || v == nil {
+		return 0
+	}
+	return v.(int32)
+}
+
+func (m *OrderedMap) SetI32(key string, val int32) { m.Set(key, val) }
+
+func (m *OrderedMap) GetI64(key string) int64 {
+	v, ok := m.Get(key)
+	if !ok || v == nil {
+		return 0
+	}
+	return v.(int64)
+}
+
+func (m *OrderedMap) SetI64(key string, val int64) { m.Set(key, val) }
+
 // GetBool devuelve el bool asociado a key o false si no existe.
 func (m *OrderedMap) GetBool(key string) bool {
 	v, ok := m.Get(key)
