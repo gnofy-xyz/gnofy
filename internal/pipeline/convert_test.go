@@ -176,3 +176,67 @@ func TestRepairLoopFallsBackToStubsWhenAIFails(t *testing.T) {
 	}
 }
 
+func TestConvertAIAssistAlwaysVerifiesAndAnnotates(t *testing.T) {
+	if _, err := solc.ResolveBinary(""); err != nil {
+		t.Skipf("solc/solcjs no disponible: %v", err)
+	}
+
+	outDir := t.TempDir()
+	lockPath := filepath.Join(t.TempDir(), "gnofy.lock")
+
+	resolver := ai.HoleResolverFunc(func(_ context.Context, req ai.HoleRequest) (ai.HoleResolution, error) {
+		if req.Hole.Reason == "UNSUPPORTED_YUL" {
+			return ai.HoleResolution{
+				GnoCode: `id = U256FromU64(uint64(runtime.ChainHeight()))`,
+				Model:   "mock-coder",
+				Source:  ai.SourceAIFresh,
+			}, nil
+		}
+		return ai.HoleResolution{
+			GnoCode: `[]byte(nil)`,
+			Model:   "mock-coder",
+			Source:  ai.SourceAIFresh,
+		}, nil
+	})
+
+	verifierCalled := false
+	res, err := pipeline.Convert(context.Background(), pipeline.ConvertOptions{
+		Inputs:       []string{filepath.Join("..", "..", "testdata/contracts/UnsupportedYul.sol")},
+		OutDir:       outDir,
+		Solc:         solc.DefaultOptions(),
+		Codegen:      gnogen.DefaultOptions(),
+		AIMode:       "assist",
+		AIResolver:   resolver,
+		LockfilePath: lockPath,
+		Verify:       false, // --ai=assist debe verificar SIEMPRE aunque Verify sea false
+		Verifier: mockVerifier{fn: func(_ string) (*verify.Result, error) {
+			verifierCalled = true
+			return &verify.Result{Passed: true, Stdout: "PASS"}, nil
+		}},
+	})
+	if err != nil {
+		t.Fatalf("Convert UnsupportedYul error: %v", err)
+	}
+	if !verifierCalled || !res.Verified {
+		t.Fatalf("esperaba verificación obligatoria en --ai=assist incluso con Verify=false")
+	}
+	if res.TotalHoles != 2 || res.FromAI != 2 {
+		t.Fatalf("esperaba 2 huecos resueltos por IA, got total=%d fromAI=%d", res.TotalHoles, res.FromAI)
+	}
+
+	raw, err := os.ReadFile(filepath.Join(outDir, "unsupportedyul.gno"))
+	if err != nil {
+		t.Fatalf("read unsupportedyul.gno: %v", err)
+	}
+	src := string(raw)
+	for _, want := range []string{
+		`"chain/runtime"`,
+		"BEGIN gnofy-ai",
+		"END gnofy-ai",
+		"runtime.ChainHeight()",
+	} {
+		if !strings.Contains(src, want) {
+			t.Errorf("unsupportedyul.gno no contiene %q\n--- SALIDA ---\n%s", want, src)
+		}
+	}
+}

@@ -84,6 +84,12 @@ func TestFunctionalGnoVMLifecycles(t *testing.T) {
 			idiomatic: false,
 			flowTest:  "testdata/functional/exactwidthints_flow_test.gno",
 		},
+		{
+			name:      "TokenVault_FullDeFiLifecycle",
+			solFile:   "testdata/contracts/TokenVault.sol",
+			idiomatic: true,
+			flowTest:  "testdata/functional/tokenvault_flow_test.gno",
+		},
 	}
 
 	v := &verify.Verifier{BinaryPath: gnoBin}

@@ -293,3 +293,28 @@ func TestConvertIdiomaticRenderMarkdown(t *testing.T) {
 	}
 }
 
+func TestConvertTokenVault(t *testing.T) {
+	files := convertFixture(t, "testdata/contracts/TokenVault.sol")
+	src := findFile(t, files, "tokenvault.gno")
+
+	for _, want := range []string{
+		"package tokenvault",
+		`"chain"`,
+		`"chain/banker"`,
+		"type VaultStatus uint8",
+		"type Position struct",
+		"type Order struct",
+		"func getOrInitPosition(",
+		"func getOrInitOrder(",
+		"ResolveERC20(",
+		"SafeERC20Transfer(",
+		"SafeERC20TransferFrom(",
+		"MulDiv(",
+		"banker.NewReadonlyBanker().GetCoin(",
+		"reentrancyLocked",
+	} {
+		if !strings.Contains(src, want) {
+			t.Errorf("tokenvault.gno no contiene %q\n--- SALIDA ---\n%s", want, src)
+		}
+	}
+}

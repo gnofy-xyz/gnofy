@@ -97,3 +97,17 @@ func TestAnalyzeWideSignedIntIsHole(t *testing.T) {
 	}
 }
 
+func TestAnalyzeTokenVault(t *testing.T) {
+	rep := compileAndAnalyze(t, "testdata/contracts/TokenVault.sol")
+	if len(rep.Contracts) != 1 || rep.Contracts[0].Name != "TokenVault" {
+		t.Fatalf("esperaba TokenVault, obtuve %+v", rep.Contracts)
+	}
+	if rep.Contracts[0].HoleCount != 0 || rep.Contracts[0].DeterministicPct != 100.0 {
+		t.Fatalf("TokenVault debería ser 100%% determinista (sin holes), obtuve %+v", rep.Contracts[0])
+	}
+	for _, want := range []string{"SHIM_IMPORT_USED", "DYNAMIC_ERC20_CAST", "CONSTRUCTOR_WITH_ARGS", "EXTERNAL_SELF_CALL", "NATIVE_BALANCE_QUERY"} {
+		if !hasCode(rep.Findings, want) {
+			t.Errorf("esperaba finding %s en TokenVault", want)
+		}
+	}
+}
