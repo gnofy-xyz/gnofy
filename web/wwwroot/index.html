@@ -1,0 +1,629 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>gnofy — Solidity in, Gno out</title>
+<meta name="description" content="gnofy is a deterministic transpiler from Solidity smart contracts to native gno.land realms.">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="icon" href="favicon.ico" sizes="any">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="theme-color" content="#050605">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://gnofy.xyz/">
+<meta property="og:title" content="gnofy — Solidity in, Gno out">
+<meta property="og:description" content="Deterministic transpiler from Solidity smart contracts to native gno.land realms. Same input, same output, byte for byte.">
+<meta property="og:image" content="https://gnofy.xyz/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://gnofy.xyz/og.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Overpass+Mono:wght@400;700&family=Roboto+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#050605; --bg2:#0b0d0c; --ink:#b9f3dd; --dim:#4f7d6c; --faint:#1d2a25;
+  --gno:#60ab96; --gno-hot:#8ff5d2; --sol:#a892f4; --warn:#fb9f44; --err:#ff5f56;
+  --mono:'Roboto Mono',ui-monospace,monospace; --solmono:'Overpass Mono',ui-monospace,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{background:var(--bg);color:var(--ink);font:14px/1.6 var(--mono);scroll-behavior:smooth}
+body{background:var(--bg);overflow-x:hidden;cursor:crosshair}
+::selection{background:var(--gno);color:#000}
+a{color:inherit}
+
+/* ---------- CRT overlay ---------- */
+.crt{pointer-events:none;position:fixed;inset:0;z-index:90}
+.crt::before{content:"";position:absolute;inset:0;
+  background:repeating-linear-gradient(to bottom,rgba(0,0,0,.0) 0 2px,rgba(0,0,0,.35) 2px 3px);mix-blend-mode:multiply}
+.crt::after{content:"";position:absolute;inset:0;
+  background:radial-gradient(ellipse at center,transparent 55%,rgba(0,0,0,.75) 100%)}
+.noise{pointer-events:none;position:fixed;inset:-50%;z-index:89;opacity:.06;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  animation:grain .5s steps(4) infinite}
+@keyframes grain{0%{transform:translate(0,0)}25%{transform:translate(-3%,2%)}50%{transform:translate(2%,-3%)}75%{transform:translate(-2%,-1%)}100%{transform:translate(1%,3%)}}
+.roll{pointer-events:none;position:fixed;left:0;right:0;height:22vh;z-index:88;
+  background:linear-gradient(to bottom,transparent,rgba(143,245,210,.045),transparent);animation:roll 7s linear infinite}
+@keyframes roll{from{top:-25vh}to{top:110vh}}
+.flicker{animation:flick 4s infinite}
+@keyframes flick{0%,100%{opacity:1}92%{opacity:1}93%{opacity:.82}94%{opacity:1}97%{opacity:.9}}
+
+/* ---------- boot ---------- */
+#boot{position:fixed;inset:0;z-index:80;background:#000;padding:4vh 5vw;font-size:13px;color:var(--gno);
+  text-shadow:0 0 6px rgba(96,171,150,.7);overflow:hidden}
+#boot .ok{color:var(--gno-hot)} #boot .w{color:var(--warn)} #boot .s{color:var(--sol)}
+#boot.off{animation:crtoff .55s cubic-bezier(.7,0,.3,1) forwards}
+@keyframes crtoff{0%{transform:scale(1,1);filter:brightness(1)}55%{transform:scale(1,.004);filter:brightness(4)}100%{transform:scale(0,.004);filter:brightness(8);opacity:0}}
+.reveal{animation:crton .7s cubic-bezier(.2,.8,.2,1) both}
+@keyframes crton{0%{transform:scale(1.2,.004);filter:brightness(6) saturate(0)}40%{transform:scale(1,.02)}100%{transform:none;filter:none}}
+
+/* ---------- layout ---------- */
+.wrap{max-width:1280px;margin:0 auto;padding:0 28px}
+header.bar{position:fixed;top:0;left:0;right:0;z-index:70;display:flex;justify-content:space-between;align-items:center;
+  padding:10px 28px;border-bottom:1px solid var(--faint);background:rgba(5,6,5,.82);backdrop-filter:blur(3px);font-size:12px;color:var(--dim)}
+header.bar b{color:var(--gno-hot);font-weight:700}
+header.bar .brand{display:flex;align-items:center;gap:8px}
+header.bar .mark{width:18px;height:18px;filter:drop-shadow(0 0 4px rgba(143,245,210,.5))}
+header.bar nav a{margin-left:22px;text-decoration:none}
+header.bar nav a:hover{color:var(--gno-hot);background:var(--gno);color:#000}
+.blink{animation:blink 1s steps(1) infinite}@keyframes blink{50%{opacity:0}}
+
+#hero{position:relative;height:100vh;min-height:640px;overflow:hidden}
+#ascii{position:absolute;inset:0;width:100%;height:100%;filter:drop-shadow(0 0 6px rgba(96,171,150,.55))}
+.hero-ui{position:absolute;left:28px;right:28px;bottom:6vh;display:grid;grid-template-columns:1.3fr 1fr;gap:28px;align-items:end;pointer-events:none}
+.hero-ui > *{pointer-events:auto}
+.tag{display:inline-block;border:1px solid var(--gno);color:var(--gno-hot);padding:2px 8px;font-size:11px;letter-spacing:.12em;text-transform:uppercase}
+.lede{font-size:clamp(18px,2.2vw,28px);line-height:1.25;margin-top:14px;color:#e6fff6;text-shadow:0 0 10px rgba(143,245,210,.35)}
+.lede .sol{color:var(--sol);font-family:var(--solmono)} .lede .gno{color:var(--gno-hot)}
+.rgb{position:relative}
+.rgb::before,.rgb::after{content:attr(data-t);position:absolute;inset:0;mix-blend-mode:screen;pointer-events:none}
+.rgb::before{color:#f0f;transform:translate(-1px,0);opacity:.5;animation:jit 3s infinite}
+.rgb::after{color:#0ff;transform:translate(1px,0);opacity:.5;animation:jit 2.3s infinite reverse}
+@keyframes jit{0%,90%,100%{clip-path:inset(0 0 0 0)}92%{clip-path:inset(20% 0 60% 0);transform:translate(-6px,0)}95%{clip-path:inset(70% 0 5% 0);transform:translate(5px,0)}}
+.install{border:1px solid var(--gno);background:rgba(0,0,0,.65);padding:14px 16px;position:relative}
+.install::before{content:"┤ install ├";position:absolute;top:-10px;left:12px;background:var(--bg);color:var(--gno);font-size:11px;padding:0 4px}
+.install code{display:block;color:#fff;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.install code::before{content:"$ ";color:var(--gno)}
+.btns{display:flex;gap:10px;margin-top:12px;flex-wrap:wrap}
+.btn{font:700 13px var(--mono);letter-spacing:.06em;text-transform:uppercase;padding:11px 16px;border:1px solid var(--gno-hot);
+  background:transparent;color:var(--gno-hot);cursor:pointer;position:relative;overflow:hidden;text-decoration:none}
+.btn.primary{background:var(--gno-hot);color:#000;box-shadow:0 0 24px rgba(143,245,210,.45)}
+.btn::after{content:"";position:absolute;inset:0;background:repeating-linear-gradient(90deg,transparent 0 3px,rgba(0,0,0,.2) 3px 4px);opacity:0}
+.btn:hover{animation:btnglitch .3s steps(2) 2}
+.btn:hover::after{opacity:1}
+@keyframes btnglitch{0%{transform:translate(0)}33%{transform:translate(-2px,1px);filter:hue-rotate(90deg)}66%{transform:translate(2px,-1px)}100%{transform:none}}
+.scroll-hint{position:absolute;top:84px;right:28px;z-index:3;background:rgba(0,0,0,.8);border:1px solid var(--faint);padding:6px 10px;font-size:11px;color:var(--dim);text-align:right;line-height:1.5}
+
+section{position:relative;padding:120px 0;border-top:1px solid var(--faint)}
+.h{font-size:clamp(30px,5vw,64px);line-height:1;color:#eafff7;text-transform:uppercase;letter-spacing:-.02em;margin-bottom:18px;text-shadow:0 0 18px rgba(143,245,210,.3)}
+.h small{display:block;font-size:12px;color:var(--gno);letter-spacing:.2em;margin-bottom:12px;text-shadow:none}
+.sub{max-width:62ch;color:var(--dim)}
+
+/* ---------- transpile split ---------- */
+.split{display:grid;grid-template-columns:1fr 64px 1fr;margin-top:48px;border:1px solid var(--faint);position:relative;background:var(--bg2)}
+.pane{position:relative;overflow:hidden}
+.pane .t{display:flex;justify-content:space-between;padding:8px 14px;border-bottom:1px solid var(--faint);font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.1em}
+.pane pre{padding:16px 14px;font-size:13px;line-height:1.65;min-height:470px;white-space:pre}
+.pane.sol pre{font-family:var(--solmono);color:#cfc4ff}
+.pane.gno pre{color:var(--ink)}
+.mid{border-left:1px solid var(--faint);border-right:1px solid var(--faint);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;font-size:10px;color:var(--dim);writing-mode:vertical-rl;letter-spacing:.3em}
+.mid .arrow{writing-mode:horizontal-tb;color:var(--gno-hot);font-size:18px;animation:pulse 1s infinite}
+@keyframes pulse{50%{opacity:.25}}
+.beam{position:absolute;left:0;right:0;height:2px;background:var(--gno-hot);box-shadow:0 0 18px 4px rgba(143,245,210,.6);top:0;opacity:0;pointer-events:none}
+.k{color:var(--sol)} .kg{color:var(--gno-hot)} .c{color:#5b6e66} .st{color:#f9d985} .n{color:#fb9f44}
+.ln{display:inline-block;width:2.2em;color:#2e3f38;user-select:none}
+.hl{background:rgba(143,245,210,.12);box-shadow:inset 2px 0 var(--gno-hot)}
+
+/* ---------- passes ---------- */
+.passes{display:grid;grid-template-columns:repeat(6,1fr);gap:0;margin-top:48px;border:1px solid var(--faint)}
+.pass{padding:18px 14px;border-right:1px solid var(--faint);position:relative;min-height:210px;transition:background .15s}
+.pass:last-child{border-right:0}
+.pass .i{font-size:11px;color:var(--dim)}
+.pass h3{font-size:16px;color:#eafff7;margin:12px 0 8px;text-transform:lowercase}
+.pass p{font-size:12px;color:var(--dim);line-height:1.5}
+.pass .bar{position:absolute;left:0;bottom:0;height:3px;background:var(--gno-hot);width:0;box-shadow:0 0 10px var(--gno-hot)}
+.pass:hover{background:var(--gno);}
+.pass:hover *{color:#000!important}
+.pass.hole h3{color:var(--warn)}
+
+/* ---------- commands ---------- */
+.cmds{display:grid;grid-template-columns:repeat(3,1fr);gap:24px;margin-top:48px}
+.cmd{border:1px solid var(--faint);padding:0;background:var(--bg2);position:relative}
+.cmd .top{padding:10px 14px;border-bottom:1px solid var(--faint);color:var(--gno-hot);font-weight:700}
+.cmd .top span{color:var(--dim);font-weight:400}
+.cmd pre{padding:14px;font-size:12px;color:var(--ink);min-height:200px;white-space:pre-wrap}
+.cmd:hover{border-color:var(--gno-hot);box-shadow:0 0 0 1px var(--gno-hot),0 0 40px rgba(96,171,150,.18)}
+
+/* ---------- stats ticker ---------- */
+.ticker{overflow:hidden;border-top:1px solid var(--faint);border-bottom:1px solid var(--faint);white-space:nowrap;padding:14px 0;font-size:13px;color:var(--dim)}
+.ticker div{display:inline-block;animation:tick 40s linear infinite}
+.ticker b{color:var(--gno-hot);font-weight:400} .ticker i{color:var(--sol);font-style:normal}
+@keyframes tick{to{transform:translateX(-50%)}}
+
+/* ---------- download ---------- */
+#download{text-align:left;padding:160px 0}
+.big{font-size:clamp(48px,11vw,170px);line-height:.85;letter-spacing:-.04em;color:var(--gno-hot);text-transform:uppercase;text-shadow:0 0 30px rgba(143,245,210,.5)}
+.os{display:grid;grid-template-columns:repeat(3,1fr);gap:0;margin-top:40px;border:1px solid var(--gno)}
+.os a{display:block;padding:22px 18px;text-decoration:none;border-right:1px solid var(--gno);transition:none}
+.os a:last-child{border-right:0}
+.os a b{display:block;font-size:22px;color:#fff}
+.os a small{color:var(--dim)}
+.os a:hover{background:var(--gno-hot);}
+.os a:hover b,.os a:hover small{color:#000}
+.os a.me{background:rgba(143,245,210,.08)}
+.os a.me::after{content:"← detected";float:right;font-size:11px;color:var(--gno-hot)}
+footer{padding:28px;border-top:1px solid var(--faint);font-size:12px;color:var(--dim);display:flex;justify-content:space-between}
+footer a{text-decoration:none;color:var(--gno)}footer a:hover{color:#000;background:var(--gno-hot)}
+
+/* ---------- source ---------- */
+header.bar .right{display:flex;align-items:center}
+header.bar .ghl{margin-left:22px;text-decoration:none;border:1px solid var(--gno);color:var(--gno-hot);padding:2px 8px;white-space:nowrap}
+header.bar .ghl:hover{background:var(--gno-hot);color:#000}
+header.bar .ghl i{font-style:normal;color:var(--dim)}header.bar .ghl:hover i{color:#000}
+.src{display:grid;grid-template-columns:1.25fr 1fr;gap:24px;margin-top:48px;align-items:start}
+.src .cmd pre{min-height:290px;white-space:pre-wrap;word-break:break-word}
+.src .cmd pre .p{color:var(--gno)}.src .cmd pre .ok{color:var(--gno-hot)}.src .cmd pre .lv{color:var(--warn)}
+.audit{border:1px solid var(--faint);background:var(--bg2)}
+.audit .t{padding:10px 14px;border-bottom:1px solid var(--faint);font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.1em}
+.audit a{display:grid;grid-template-columns:1fr auto;gap:2px 12px;padding:12px 14px;border-bottom:1px solid var(--faint);text-decoration:none}
+.audit a:last-child{border-bottom:0}
+.audit a b{color:#eafff7;font-weight:500}.audit a span{grid-column:1;font-size:12px;color:var(--dim)}
+.audit a em{grid-row:1/3;grid-column:2;align-self:center;font-style:normal;color:var(--gno)}
+.audit a:hover{background:var(--gno-hot)}.audit a:hover *{color:#000}
+#source .btns{margin-top:24px}
+
+@media (max-width:900px){
+  .hero-ui{grid-template-columns:1fr}
+  .split{grid-template-columns:1fr}.mid{writing-mode:horizontal-tb;flex-direction:row;padding:8px;border:0;border-top:1px solid var(--faint);border-bottom:1px solid var(--faint)}
+  .passes{grid-template-columns:repeat(2,1fr)}.pass{border-bottom:1px solid var(--faint)}
+  .cmds,.os{grid-template-columns:1fr}.os a{border-right:0;border-bottom:1px solid var(--gno)}
+  header.bar nav{display:none}
+  .wrap{padding:0 16px}
+  .pane pre{font-size:11px;overflow-x:auto}
+  /* ---- mobile layout (desktop untouched) ---- */
+  html,body{overflow-x:hidden}
+  body{cursor:auto}
+  header.bar{padding:10px 16px}
+  .hero-ui{left:16px;right:16px;bottom:max(4vh,18px);gap:16px}
+  .hero-ui > *{min-width:0}
+  .lede{font-size:clamp(16px,4.6vw,22px);margin-top:10px}
+  .install code{font-size:13px}
+  .btns .btn{flex:1 1 auto;text-align:center;padding:11px 12px}
+  .scroll-hint{display:none}
+  #hero{height:100svh;min-height:560px}
+  section{padding:72px 0}
+  .h{font-size:clamp(28px,9vw,44px)}
+  .sub span{white-space:nowrap}
+  .split{margin-top:32px}
+  .pane pre{min-height:0;font-size:10.5px;line-height:1.6;padding:12px 10px;-webkit-overflow-scrolling:touch}
+  .pane .t{padding:8px 10px;font-size:10px;gap:8px}
+  .pane .t span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .pane .t span:first-child{flex:1 1 auto;min-width:0}
+  .pane .t span:last-child{flex:0 0 auto;max-width:60%}
+  .ln{width:1.9em}
+  .passes{margin-top:32px}
+  .pass{min-height:0;padding:16px 12px 20px}
+  .pass:nth-child(2n){border-right:0}
+  .pass h3{font-size:15px;margin:8px 0 6px}
+  .pass p{overflow-wrap:anywhere}
+  .cmds{gap:16px;margin-top:32px}
+  .cmd pre{min-height:0;font-size:11px;overflow-x:auto;white-space:pre}
+  .ticker{font-size:12px;padding:12px 0}
+  #download{padding:96px 0}
+  .big{font-size:clamp(44px,15vw,96px)}
+  .os{margin-top:28px}
+  .os a{padding:18px 16px}
+  footer{padding:18px 16px;gap:12px}
+  .src{grid-template-columns:1fr;margin-top:32px;gap:16px}
+  .src .cmd pre{min-height:0;font-size:11px}
+  header.bar .ghl{margin-left:0;padding:2px 6px}
+  header.bar .brand{min-width:0}
+}
+@media (max-width:380px){
+  .btns .btn{font-size:12px;padding:10px 8px}
+  .install code{font-size:12px}
+  .pane pre{font-size:9.5px}
+}
+@media (hover:none){
+  .btn:hover,.pass:hover{animation:none}
+  .audit a:hover{background:transparent}.audit a:hover b{color:#eafff7}.audit a:hover span{color:var(--dim)}.audit a:hover em{color:var(--gno)}
+  .pass:hover{background:transparent}
+  .pass:hover .i,.pass:hover p{color:var(--dim)!important}
+  .pass:hover h3{color:#eafff7!important}
+  .pass.hole:hover h3{color:var(--warn)!important}
+}
+@media (prefers-reduced-motion:reduce){*{animation:none!important}}
+</style>
+</head>
+<body>
+<div class="crt"></div><div class="noise"></div><div class="roll"></div>
+
+<div id="boot"></div>
+
+<main id="app" class="flicker" style="visibility:hidden">
+<header class="bar">
+  <div class="brand"><svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><polygon points="16,.5 4,14.5 16,14.5" fill="#a892f4"/><polygon points="16,.5 28,14.5 16,14.5" fill="#6f58c9"/><rect x="2" y="15.5" width="28" height="1.6" fill="#8ff5d2"/><rect x="8" y="18" width="3" height="3" fill="#8ff5d2"/><rect x="12" y="18" width="3" height="3" fill="#60ab96"/><rect x="16" y="18" width="3" height="3" fill="#8ff5d2"/><rect x="20" y="18" width="3" height="3" fill="#60ab96"/><rect x="10" y="22" width="3" height="3" fill="#8ff5d2"/><rect x="14" y="22" width="3" height="3" fill="#60ab96"/><rect x="18" y="22" width="3" height="3" fill="#8ff5d2"/><rect x="12" y="26" width="3" height="3" fill="#60ab96"/><rect x="16" y="26" width="3" height="3" fill="#8ff5d2"/><rect x="14.5" y="29" width="3" height="3" fill="#60ab96"/></svg><b>gnofy</b> :: tty0 :: <span id="clock">--:--:--</span> <span class="blink">█</span></div>
+  <div class="right"><nav><a href="#transpile">[01] transpile</a><a href="#pipeline">[02] pipeline</a><a href="#cli">[03] cli</a><a href="#source">[04] source</a><a href="#download">[05] download</a></nav><a class="ghl" href="https://github.com/gnofy-xyz/gnofy" target="_blank" rel="noopener">github <i id="ghstars"></i>↗</a></div>
+</header>
+
+<section id="hero" style="border:0;padding:0">
+  <canvas id="ascii"></canvas>
+  <div class="scroll-hint">MOUSE → perturb the AST<br>CLICK → re-transpile<br>SCROLL ↓</div>
+  <div class="hero-ui">
+    <div>
+      <span class="tag">deterministic transpiler · v0.1</span>
+      <p class="lede">Your <span class="sol">Solidity</span> contract, recompiled as a <span class="gno">native gno.land realm</span>. No emulated EVM. Same input → same output, byte for byte.</p>
+    </div>
+    <div class="install">
+      <code id="inst">curl -sSfL https://gnofy.xyz/install.sh | sh</code>
+      <div class="btns">
+        <a class="btn primary" href="#download">↓ download</a>
+        <button class="btn" id="copy">copy</button>
+        <a class="btn" href="#transpile">see it run</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="ticker"><div id="tk"></div></div>
+
+<section id="transpile">
+  <div class="wrap">
+    <h2 class="h"><small>[01] // live transpile</small>Counter.sol → counter.gno</h2>
+    <p class="sub">The AST resolved by <span style="color:var(--sol)">solc --standard-json</span> runs through deterministic passes and is emitted as Go 1.17 + the Gno stdlib. Readable. Auditable. Composable on-chain.</p>
+    <div class="split" id="split">
+      <div class="pane sol"><div class="t"><span>● contracts/Counter.sol</span><span>solidity ^0.8.20</span></div><pre id="solcode"></pre><div class="beam" id="beamL"></div></div>
+      <div class="mid"><span class="arrow">▶</span>gnofy convert</div>
+      <div class="pane gno"><div class="t"><span>● r/counter/counter.gno</span><span id="gstat">waiting…</span></div><pre id="gnocode"></pre><div class="beam" id="beamR"></div></div>
+    </div>
+  </div>
+</section>
+
+<section id="pipeline">
+  <div class="wrap">
+    <h2 class="h"><small>[02] // pipeline</small>Six passes. Zero magic.</h2>
+    <p class="sub">Anything without a 1:1 equivalent (assembly, Yul) is isolated as a <span style="color:var(--warn)">Hole</span> node. By default: a safe TODO stub. With <span style="color:var(--gno-hot)">--ai=assist</span>: it gets resolved, validated with gno test and pinned in gnofy.lock.</p>
+    <div class="passes" id="passes">
+      <div class="pass"><span class="i">00</span><h3>solc</h3><p>Typed AST via standard-json. Inheritance and types resolved.</p><div class="bar"></div></div>
+      <div class="pass"><span class="i">01</span><h3>c3flatten</h3><p>C3 linearization: virtual, override, super.</p><div class="bar"></div></div>
+      <div class="pass"><span class="i">02</span><h3>modifiers</h3><p>Deterministic inline expansion of modifiers.</p><div class="bar"></div></div>
+      <div class="pass"><span class="i">03</span><h3>types</h3><p>uint256 → u256 checked. mapping → avl.Tree.</p><div class="bar"></div></div>
+      <div class="pass"><span class="i">04</span><h3>crossing</h3><p>msg.sender → runtime.PreviousRealm(). cur realm.</p><div class="bar"></div></div>
+      <div class="pass hole"><span class="i">05</span><h3>hole?</h3><p>assembly{} → TODO stub, or --ai=assist + gnofy.lock.</p><div class="bar"></div></div>
+    </div>
+  </div>
+</section>
+
+<section id="cli">
+  <div class="wrap">
+    <h2 class="h"><small>[03] // cli</small>analyze · convert · verify</h2>
+    <div class="cmds">
+      <div class="cmd"><div class="top">analyze <span>./contracts</span></div><pre>CONTRACT          AUTO  WARN  HOLE  SCORE
+Counter.sol        14     0     0  100%
+SimpleERC20.sol    61     2     0   97%
+UnsupportedYul.sol  9     1     3   69%
+────────────────────────────────────────
+coverage: 91.4%  deterministic ✓</pre></div>
+      <div class="cmd"><div class="top">convert <span>Counter.sol -o r/counter</span></div><pre>✓ solc      0.8.20  ast ok
+✓ ir        3 funcs · 1 event
+✓ passes    6/6
+✓ codegen   counter.gno
+✓ codegen   counter_test.gno
+✓ codegen   gnomod.toml
+sha256 8f1c…e2a0  (stable)</pre></div>
+      <div class="cmd"><div class="top">verify <span>./out/r/counter</span></div><pre>=== RUN   TestIncrement
+--- PASS: TestIncrement (0.00s)
+=== RUN   TestDecrementUnderflow
+--- PASS: TestDecrementUnderflow (0.00s)
+ok      gno.land/r/counter  0.42s</pre></div>
+    </div>
+  </div>
+</section>
+
+<section id="source">
+  <div class="wrap">
+    <h2 class="h"><small>[04] // open source</small>Don't trust. Read.</h2>
+    <p class="sub">gnofy is a public repository. A transpiler that writes your contract should be as auditable as the contract itself: every pass, every runtime helper, every line the AI is allowed to touch.</p>
+    <div class="src">
+      <div class="cmd"><div class="top">audit <span>github.com/gnofy-xyz/gnofy</span></div><pre id="repo"></pre></div>
+      <div class="audit">
+        <div class="t">where to look</div>
+        <a href="https://github.com/gnofy-xyz/gnofy/tree/main/internal/passes" target="_blank" rel="noopener"><b>internal/passes/</b><span>deterministic IR passes: c3, modifiers, crossing, naming</span><em>↗</em></a>
+        <a href="https://github.com/gnofy-xyz/gnofy/tree/main/internal/codegen/gno" target="_blank" rel="noopener"><b>internal/codegen/gno/</b><span>the emitter. same IR → same bytes</span><em>↗</em></a>
+        <a href="https://github.com/gnofy-xyz/gnofy/tree/main/gno/p/solrt" target="_blank" rel="noopener"><b>gno/p/solrt/</b><span>U256 + OrderedMap runtime, embedded in the binary</span><em>↗</em></a>
+        <a href="https://github.com/gnofy-xyz/gnofy/tree/main/internal/ai" target="_blank" rel="noopener"><b>internal/ai/</b><span>the only network code. off unless you pass --ai</span><em>↗</em></a>
+        <a href="https://github.com/gnofy-xyz/gnofy/tree/main/testdata" target="_blank" rel="noopener"><b>testdata/</b><span>corpus + functional flows run on a real GnoVM</span><em>↗</em></a>
+      </div>
+    </div>
+    <div class="btns">
+      <a class="btn primary" href="https://github.com/gnofy-xyz/gnofy" target="_blank" rel="noopener">★ star on github</a>
+      <button class="btn" id="copyclone">copy git clone</button>
+      <a class="btn" href="https://github.com/gnofy-xyz/gnofy/issues" target="_blank" rel="noopener">report an issue</a>
+    </div>
+  </div>
+</section>
+
+<section id="download">
+  <div class="wrap">
+    <div class="big rgb" data-t="get gnofy_">get gnofy<span class="blink">_</span></div>
+    <p class="sub" style="margin-top:22px">Static binary. Requires <span style="color:var(--sol)">solc 0.8.x</span> and <span style="color:var(--gno-hot)">gno</span> on your PATH.</p>
+    <div class="os" id="os">
+      <a href="#" data-os="linux"><b>linux</b><small>amd64 · arm64</small></a>
+      <a href="#" data-os="mac"><b>macos</b><small>apple silicon · intel</small></a>
+      <a href="#" data-os="win"><b>windows</b><small>amd64 · .exe</small></a>
+    </div>
+  </div>
+</section>
+<footer><span>gnofy.xyz — solidity in, gno out.</span><span><a href="https://github.com/gnofy-xyz/gnofy" target="_blank" rel="noopener">github</a> · <a href="/timeline">build log</a> · EOF</span></footer>
+</main>
+
+<script>
+const $=s=>document.querySelector(s);
+const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/* ---------------- BOOT ---------------- */
+const bootLines=[
+ ['gnofy bios v0.1.0 — (c) gnofy.xyz',''],
+ ['probing toolchain…',''],
+ ['  solc ........ 0.8.20+commit.a1b79de6','ok'],
+ ['  gno ......... gnolang/gno@master','ok'],
+ ['  go .......... 1.27 (host) → emitting go1.17 (target)','ok'],
+ ['loading frontend/solc ........','ok'],
+ ['loading ir {ContractIR FuncIR StmtIR HoleIR} ...','ok'],
+ ['loading passes c3flatten modifiers types crossing naming ...','ok'],
+ ['loading codegen/gno ...','ok'],
+ ['ai resolver ......... off (deterministic)','w'],
+ ['mounting gno.land/p/solrt ...','ok'],
+ ['',''],
+ ['> ready. handing tty to user_','s'],
+];
+const boot=$('#boot');
+function runBoot(){
+  if(reduce||sessionStorageSafe()){finishBoot(true);return}
+  // time-based schedule: robust to timer throttling, total ≈ 2.4s
+  let at=0;const sched=bootLines.map(([t,k])=>{const s=at,d=Math.max(40,t.length*2.2);at+=d+70;return {t,k,s,e:s+d}});
+  const total=at+350,t0=performance.now();let shown=0;
+  const id=setInterval(()=>{
+    const el=performance.now()-t0;
+    while(shown<sched.length&&sched[shown].s<=el){const d=document.createElement('div');boot.appendChild(d);shown++}
+    sched.slice(0,shown).forEach((L,i)=>{const d=boot.children[i];if(d.dataset.done)return;
+      if(el>=L.e){d.innerHTML=L.t+(L.k==='ok'?'  <span class="ok">[ OK ]</span>':L.k==='w'?'  <span class="w">[SKIP]</span>':'');if(L.k==='s')d.className='s';d.dataset.done=1}
+      else d.textContent=L.t.slice(0,Math.floor(L.t.length*(el-L.s)/(L.e-L.s)))});
+    if(el>=total){clearInterval(id);finishBoot()}
+  },16);
+}
+function sessionStorageSafe(){try{const v=sessionStorage.getItem('gnofy-booted');sessionStorage.setItem('gnofy-booted','1');return !!v}catch(e){return false}}
+function finishBoot(instant){
+  const app=$('#app');app.style.visibility='visible';
+  if(instant){boot.remove();return}
+  boot.classList.add('off');setTimeout(()=>{boot.remove();crtOn(app)},500);
+}
+function crtOn(el){const t0=performance.now();let done=false;
+  setTimeout(()=>{done=true;el.style.transform='';el.style.filter=''},800);
+  (function st(){if(done)return;const p=Math.min(1,Math.max(0,(performance.now()-t0)/650));
+  const sy=p<.4?.004+(p/.4)*.05:.054+(1-.054)*(1-Math.pow(1-(p-.4)/.6,3));const sx=p<.4?1.2-(p/.4)*.2:1;
+  el.style.transform=p<1?`scale(${sx},${sy})`:'';el.style.filter=p<1?`brightness(${1+5*(1-p)})`:'';if(p<1)requestAnimationFrame(st);else done=true})()}
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+boot.addEventListener('click',()=>finishBoot(true));
+runBoot();
+
+setInterval(()=>{$('#clock').textContent=new Date().toTimeString().slice(0,8)},1000);
+
+/* ---------------- ASCII HERO ---------------- */
+const cv=$('#ascii'),ctx=cv.getContext('2d');
+const off=document.createElement('canvas'),octx=off.getContext('2d',{willReadFrequently:true});
+const CH=' .:-=+*#%@';
+const GLY='{}();=+<>01solgnorealm';
+let W,H,cols,rows,cell,mask=[],mouse={x:-9e3,y:-9e3},shock=0,shockX=0,shockY=0,word='GNOFY',t0=performance.now();
+function resize(){
+  const dpr=Math.min(devicePixelRatio||1,2);
+  W=cv.clientWidth;H=cv.clientHeight;cv.width=W*dpr;cv.height=H*dpr;ctx.setTransform(dpr,0,0,dpr,0,0);
+  cell=W<700?7:11;cols=Math.ceil(W/cell);rows=Math.ceil(H/(cell*1.6));
+  off.width=cols;off.height=rows;
+  octx.fillStyle='#000';octx.fillRect(0,0,cols,rows);
+  octx.fillStyle='#fff';octx.textAlign='center';octx.textBaseline='middle';
+  let fs=Math.min(cols/3.3,rows*.75);
+  octx.font=`900 ${fs}px "Roboto Mono",monospace`;
+  const mobile=W<700;
+  if(mobile){const mw=octx.measureText(word).width;if(mw>cols*.9){fs*=cols*.9/mw;octx.font=`900 ${fs}px "Roboto Mono",monospace`}}
+  octx.fillText(word,cols/2,rows*(mobile?.30:.40));
+  const d=octx.getImageData(0,0,cols,rows).data;mask=new Float32Array(cols*rows);
+  for(let i=0;i<cols*rows;i++)mask[i]=d[i*4]/255;
+}
+addEventListener('resize',resize);
+cv.addEventListener('mousemove',e=>{const r=cv.getBoundingClientRect();mouse.x=e.clientX-r.left;mouse.y=e.clientY-r.top});
+cv.addEventListener('mouseleave',()=>{mouse.x=mouse.y=-9e3});
+// touch: drag a finger to perturb the AST (no effect on desktop pointers)
+const touchAt=e=>{const t=e.touches[0];if(!t)return;const r=cv.getBoundingClientRect();mouse.x=t.clientX-r.left;mouse.y=t.clientY-r.top};
+cv.addEventListener('touchstart',touchAt,{passive:true});
+cv.addEventListener('touchmove',touchAt,{passive:true});
+cv.addEventListener('touchend',()=>{setTimeout(()=>{mouse.x=mouse.y=-9e3},250)},{passive:true});
+cv.addEventListener('click',e=>{const r=cv.getBoundingClientRect();shock=1;shockX=e.clientX-r.left;shockY=e.clientY-r.top;
+  word=word==='GNOFY'?'.SOL→.GNO':word==='.SOL→.GNO'?'GNO.LAND':'GNOFY';setTimeout(resize,250)});
+function frame(now){
+  const t=(now-t0)/1000;
+  ctx.fillStyle='rgba(5,6,5,.55)';ctx.fillRect(0,0,W,H);
+  ctx.font=`${cell*1.15}px "Roboto Mono",monospace`;ctx.textBaseline='top';
+  const ch=cell*1.6;shock*=.94;
+  for(let y=0;y<rows;y++){
+    // horizontal glitch band
+    const band=(Math.sin(t*1.7+y*.15)>.985)?(Math.random()*20-10):0;
+    for(let x=0;x<cols;x++){
+      const px=x*cell,py=y*ch;
+      const dx=px-mouse.x,dy=py-mouse.y,dist=Math.sqrt(dx*dx+dy*dy);
+      const sdx=px-shockX,sdy=py-shockY,sd=Math.sqrt(sdx*sdx+sdy*sdy);
+      const ring=shock*Math.max(0,1-Math.abs(sd-(1-shock)*900)/60);
+      let m=mask[y*cols+x];
+      const wave=.5+.5*Math.sin(x*.08+t*2)*Math.cos(y*.11-t*1.3);
+      let v=m*(.65+.35*wave)+(1-m)*(Math.random()<.004?.35:0);
+      let ox=0,oy=0,hot=0;
+      if(dist<140){const f=1-dist/140;ox=dx/dist*f*18;oy=dy/dist*f*18;hot=f;v=Math.max(v,f*.5)}
+      if(ring>0){v=Math.max(v,ring);hot=Math.max(hot,ring)}
+      if(v<.04)continue;
+      let c;
+      if(m>.5&&(hot>.2||Math.random()<.015))c=GLY[(Math.random()*GLY.length)|0];
+      else c=CH[Math.min(CH.length-1,(v*CH.length)|0)];
+      if(hot>.25)ctx.fillStyle=`rgba(168,146,244,${.5+hot*.5})`;
+      else ctx.fillStyle=m>.5?`rgba(143,245,210,${.35+v*.65})`:`rgba(79,125,108,${v*2})`;
+      ctx.fillText(c,px+ox+band,py+oy);
+    }
+  }
+  requestAnimationFrame(frame);
+}
+document.fonts.ready.then(()=>{resize();requestAnimationFrame(frame)});
+
+/* ---------------- copy ---------------- */
+$('#copy').onclick=async e=>{try{await navigator.clipboard.writeText($('#inst').textContent);e.target.textContent='copied ✓'}catch(_){e.target.textContent='ctrl+c'}setTimeout(()=>e.target.textContent='copy',1400)};
+
+/* ---------------- ticker ---------------- */
+const pairs=[['uint256','solrt.U256'],['mapping(address=>uint)','avl.Tree'],['msg.sender','runtime.PreviousRealm().Address()'],['require(c, m)','if !c { panic(m) }'],['emit E(a)','chain.Emit("E", …)'],['modifier onlyOwner','inlined guard'],['contract C is A, B','C3 linearized'],['assembly { … }','HoleIR → TODO'],['view returns','func Get() T']];
+const tk=pairs.map(([a,b])=>`<i>${a}</i> <b>→</b> ${b}`).join('   ///   ');
+$('#tk').innerHTML=tk+'   ///   '+tk+'   ///   ';
+
+/* ---------------- transpile demo ---------------- */
+const SOL=`// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.20;
+
+contract Counter {
+    uint64 public count;
+
+    event Incremented(address indexed caller, uint64 newCount);
+
+    function increment() external {
+        count += 1;
+        emit Incremented(msg.sender, count);
+    }
+
+    function decrement() external {
+        require(count > 0, "Counter: underflow");
+        count -= 1;
+    }
+
+    function get() external view returns (uint64) {
+        return count;
+    }
+}`;
+const GNO=`// Code generated by gnofy. DO NOT EDIT.
+package counter
+
+import (
+	"chain"
+	"chain/runtime"
+	"strconv"
+)
+
+var count uint64
+
+func Increment(cur realm) {
+	count += 1
+	caller := runtime.PreviousRealm().Address()
+	chain.Emit("Incremented",
+		"caller", caller.String(),
+		"newCount", strconv.FormatUint(count, 10))
+}
+
+func Decrement(cur realm) {
+	if !(count > 0) {
+		panic("Counter: underflow")
+	}
+	count -= 1
+}
+
+func Get() uint64 { return count }`;
+function esc(s){return s.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}
+function hl(line,kind){
+  let s=esc(line);
+  if(/^\s*\/\//.test(line))return `<span class="c">${s}</span>`;
+  s=s.replace(/("[^"]*")/g,'<span class="st">$1</span>');
+  const kw=kind==='sol'?/\b(pragma|solidity|contract|uint64|public|event|address|indexed|function|external|emit|require|view|returns|return)\b/g
+                       :/\b(package|import|var|uint64|func|realm|cur|if|panic|return)\b/g;
+  s=s.replace(kw,`<span class="${kind==='sol'?'k':'kg'}">$1</span>`);
+  s=s.replace(/\b(\d+)\b/g,'<span class="n">$1</span>');
+  return s;
+}
+const solL=SOL.split('\n'),gnoL=GNO.split('\n');
+$('#solcode').innerHTML=solL.map((l,i)=>`<div data-i="${i}"><span class="ln">${i+1}</span>${hl(l,'sol')}</div>`).join('');
+const gpre=$('#gnocode');
+gpre.innerHTML=gnoL.map((l,i)=>`<div data-i="${i}"><span class="ln">${i+1}</span><span class="g"></span></div>`).join('');
+const SCR='!<>-_\\/[]{}—=+*^?#01';
+function scramble(el,html,plain,dur=380){
+  return new Promise(res=>{
+    const start=performance.now();
+    (function step(n){
+      const p=Math.min(1,Math.max(0,(performance.now()-start)/dur));
+      const k=Math.floor(plain.length*p);
+      if(p<1){
+        let s='';for(let i=k;i<plain.length;i++)s+=plain[i]===' '||plain[i]==='\t'?plain[i]:SCR[(Math.random()*SCR.length)|0];
+        el.innerHTML=esc(plain.slice(0,k))+`<span style="color:var(--sol)">${esc(s)}</span>`;requestAnimationFrame(step);
+      }else{el.innerHTML=html;res()}
+    })(start);
+  });
+}
+let ran=false;
+async function transpile(){
+  if(ran)return;ran=true;
+  const bl=$('#beamL'),br=$('#beamR');const pre=$('#solcode');
+  const lineH=pre.children[0].getBoundingClientRect().height,top0=pre.offsetTop+16;
+  $('#gstat').textContent='emitting…';
+  // scan solidity
+  bl.style.opacity=1;
+  for(let i=0;i<solL.length;i++){bl.style.top=(top0+i*lineH)+'px';pre.children[i].classList.add('hl');await sleep(28);pre.children[i].classList.remove('hl')}
+  bl.style.opacity=0;br.style.opacity=1;
+  const gk=gpre.children;
+  for(let i=0;i<gnoL.length;i++){
+    br.style.top=(top0+i*lineH)+'px';gk[i].classList.add('hl');
+    await scramble(gk[i].querySelector('.g'),hl(gnoL[i],'gno'),gnoL[i],gnoL[i].length?160:10);
+    gk[i].classList.remove('hl');
+  }
+  br.style.opacity=0;
+  $('#gstat').innerHTML='<span style="color:var(--gno-hot)">✓ deterministic · sha256 8f1c…e2a0</span>';
+}
+new IntersectionObserver(es=>es.forEach(e=>e.isIntersecting&&transpile()),{threshold:.4}).observe($('#split'));
+
+/* ---------------- passes progress ---------------- */
+new IntersectionObserver(es=>es.forEach(async e=>{
+  if(!e.isIntersecting)return;
+  const bars=[...document.querySelectorAll('.pass .bar')];
+  for(const b of bars){b.style.transition='width .45s steps(12)';b.style.width='100%';await sleep(260)}
+}),{threshold:.5}).observe($('#passes'));
+
+/* ---------------- SOURCE ---------------- */
+(()=>{
+const GH='https://github.com/gnofy-xyz/gnofy',API='https://api.github.com/repos/gnofy-xyz/gnofy';
+const e=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const ago=t=>{const m=Math.max(0,(Date.now()-new Date(t))/6e4);return m<60?Math.round(m)+'m ago':m<1440?Math.round(m/60)+'h ago':Math.round(m/1440)+'d ago'};
+const L=[
+ '<span class="p">$</span> git clone '+GH,
+ '<span class="p">$</span> cd gnofy &amp;&amp; go test ./...',
+ '<span class="ok">ok</span>   internal/passes',
+ '<span class="ok">ok</span>   internal/codegen/gno',
+ '<span class="ok">ok</span>   internal/pipeline',
+ '<span class="ok">ok</span>   internal/verify       <span class="c">// GnoVM flows</span>',
+ '',
+ '<span class="p">$</span> gh repo view gnofy-xyz/gnofy',
+];
+let live=['<span class="c">fetching repo metadata…</span>'];
+fetch(API).then(r=>r.ok?r.json():Promise.reject()).then(async d=>{
+  let sha='';try{const c=await (await fetch(API+'/commits?per_page=1')).json();sha=c[0].sha.slice(0,7)}catch(_){}
+  live=[
+   `stars <span class="ok">★ ${+d.stargazers_count||0}</span> · forks ${+d.forks_count||0} · issues ${+d.open_issues_count||0}`,
+   (d.license&&d.license.spdx_id&&d.license.spdx_id!=='NOASSERTION'?`license <span class="lv">${e(d.license.spdx_id)}</span> · `:'')+`pushed ${e(ago(d.pushed_at))}`,
+   `${e(d.default_branch)}${sha?' @ <span class="ok">'+e(sha)+'</span>':''}  <span class="c">// live from api.github.com</span>`];
+  if(+d.stargazers_count>0)$('#ghstars').textContent='★'+(+d.stargazers_count)+' ';
+}).catch(()=>{live=['<span class="c">metadata unavailable — read it on github ↗</span>']}).finally(()=>{if(done)paint()});
+const pre=$('#repo');let done=false;
+const paint=()=>{pre.innerHTML=L.concat(live).join('\n')};
+new IntersectionObserver((es,o)=>es.forEach(x=>{if(!x.isIntersecting)return;o.disconnect();
+  if(reduce){done=true;paint();return}
+  const t0=performance.now();const id=setInterval(()=>{const n=Math.min(L.length,Math.floor((performance.now()-t0)/180)+1);
+    pre.innerHTML=L.slice(0,n).join('\n');if(n>=L.length){clearInterval(id);done=true;paint()}},40);
+}),{threshold:.35}).observe(pre);
+$('#copyclone').onclick=async ev=>{const b=ev.currentTarget;try{await navigator.clipboard.writeText('git clone '+GH+'.git');b.textContent='copied ✓'}catch(_){b.textContent='ctrl+c'}setTimeout(()=>b.textContent='copy git clone',1400)};
+})();
+
+/* ---------------- OS detect ---------------- */
+const ua=navigator.userAgent.toLowerCase();const me=ua.includes('win')?'win':ua.includes('mac')?'mac':'linux';
+document.querySelector(`[data-os="${me}"]`).classList.add('me');
+</script>
+</body>
+</html>

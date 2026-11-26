@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>404 — gnofy</title>
+<meta name="robots" content="noindex">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta name="theme-color" content="#050605">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500;700&family=JetBrains+Mono:wght@700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#050605;--bg2:#0b0d0c;--ink:#b9f3dd;--dim:#4f7d6c;--faint:#1d2a25;--gno:#60ab96;--hot:#8ff5d2;--sol:#a892f4;--warn:#fb9f44;--err:#ff5f56;--mono:'Roboto Mono',ui-monospace,monospace}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background:var(--bg);color:var(--ink);font:14px/1.6 var(--mono);min-height:100%}
+body{min-height:100vh;display:flex;flex-direction:column;cursor:crosshair;overflow-x:hidden}
+::selection{background:var(--gno);color:#000}
+a{color:inherit}
+.crt{pointer-events:none;position:fixed;inset:0;z-index:90;background:repeating-linear-gradient(to bottom,transparent 0 2px,rgba(0,0,0,.35) 2px 3px)}
+.crt::after{content:"";position:absolute;inset:0;background:radial-gradient(ellipse at center,transparent 55%,rgba(0,0,0,.75) 100%)}
+.noise{pointer-events:none;position:fixed;inset:-50%;z-index:89;opacity:.06;animation:grain .5s steps(4) infinite;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>")}
+@keyframes grain{0%{transform:translate(0,0)}25%{transform:translate(-3%,2%)}50%{transform:translate(2%,-3%)}75%{transform:translate(-2%,-1%)}100%{transform:translate(1%,3%)}}
+.roll{pointer-events:none;position:fixed;left:0;right:0;height:22vh;z-index:88;background:linear-gradient(to bottom,transparent,rgba(143,245,210,.045),transparent);animation:roll 7s linear infinite}
+@keyframes roll{from{top:-25vh}to{top:110vh}}
+.blink{animation:blink 1s steps(1) infinite}@keyframes blink{50%{opacity:0}}
+
+header{display:flex;justify-content:space-between;align-items:center;padding:10px 28px;border-bottom:1px solid var(--faint);font-size:12px;color:var(--dim)}
+header a{text-decoration:none;display:flex;align-items:center;gap:8px}
+header b{color:var(--hot)}
+header svg{width:18px;height:18px;filter:drop-shadow(0 0 4px rgba(143,245,210,.5))}
+header .st{color:var(--err)}
+
+main{flex:1;display:grid;grid-template-columns:auto 1fr;gap:56px;align-items:center;max-width:1180px;width:100%;margin:0 auto;padding:56px 28px}
+.big{position:relative;font:700 clamp(9px,1.45vw,17px)/1.05 'JetBrains Mono',monospace;white-space:pre;color:var(--hot);text-shadow:0 0 12px rgba(143,245,210,.55)}
+.big::before,.big::after{content:attr(data-t);position:absolute;inset:0;pointer-events:none;mix-blend-mode:screen}
+.big::before{color:#f0f;opacity:.55;transform:translate(-2px,0);animation:jit 2.6s infinite}
+.big::after{color:#0ff;opacity:.55;transform:translate(2px,0);animation:jit 1.9s infinite reverse}
+@keyframes jit{0%,88%,100%{clip-path:inset(0 0 0 0)}90%{clip-path:inset(15% 0 62% 0);transform:translate(-9px,0)}94%{clip-path:inset(66% 0 8% 0);transform:translate(7px,0)}}
+.hole{margin-top:22px;display:inline-block;border:1px solid var(--warn);color:var(--warn);padding:2px 8px;font-size:11px;letter-spacing:.14em;text-transform:uppercase}
+
+.diag{border:1px solid var(--faint);background:var(--bg2)}
+.diag .t{display:flex;justify-content:space-between;padding:8px 14px;border-bottom:1px solid var(--faint);font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.1em}
+.diag pre{padding:16px 14px;font-size:13px;line-height:1.7;white-space:pre-wrap;word-break:break-all;min-height:250px}
+.e{color:var(--err);font-weight:700}.w{color:var(--warn)}.h{color:var(--hot)}.d{color:var(--dim)}.s{color:var(--sol)}
+.prompt{display:flex;align-items:center;gap:8px;border-top:1px solid var(--faint);padding:10px 14px}
+.prompt span{color:var(--gno)}
+.prompt input{flex:1;background:transparent;border:0;outline:0;color:#fff;font:14px var(--mono);caret-color:var(--hot)}
+.btns{display:flex;gap:10px;margin-top:16px;flex-wrap:wrap}
+.btn{font:700 13px var(--mono);letter-spacing:.06em;text-transform:uppercase;padding:11px 16px;border:1px solid var(--hot);background:transparent;color:var(--hot);cursor:pointer;text-decoration:none}
+.btn.primary{background:var(--hot);color:#000;box-shadow:0 0 24px rgba(143,245,210,.45)}
+.btn:hover{animation:g .3s steps(2) 2}
+@keyframes g{33%{transform:translate(-2px,1px);filter:hue-rotate(90deg)}66%{transform:translate(2px,-1px)}}
+footer{padding:14px 28px;border-top:1px solid var(--faint);font-size:12px;color:var(--dim);display:flex;justify-content:space-between}
+
+@media (max-width:900px){
+  main{grid-template-columns:1fr;gap:28px;padding:32px 16px}
+  header,footer{padding:10px 16px}
+  .big{font-size:min(5.4vw,22px)}
+  .diag .t span:last-child{display:none}
+  .diag pre{font-size:12px;min-height:0}
+  .btn{flex:1 1 auto;text-align:center}
+  body{cursor:auto}
+}
+@media (prefers-reduced-motion:reduce){*{animation:none!important}}
+</style>
+</head>
+<body>
+<div class="crt"></div><div class="noise"></div><div class="roll"></div>
+
+<header>
+  <a href="/"><svg viewBox="0 0 32 32" aria-hidden="true"><polygon points="16,.5 4,14.5 16,14.5" fill="#a892f4"/><polygon points="16,.5 28,14.5 16,14.5" fill="#6f58c9"/><rect x="2" y="15.5" width="28" height="1.6" fill="#8ff5d2"/><rect x="8" y="18" width="3" height="3" fill="#8ff5d2"/><rect x="12" y="18" width="3" height="3" fill="#60ab96"/><rect x="16" y="18" width="3" height="3" fill="#8ff5d2"/><rect x="20" y="18" width="3" height="3" fill="#60ab96"/><rect x="10" y="22" width="3" height="3" fill="#8ff5d2"/><rect x="14" y="22" width="3" height="3" fill="#60ab96"/><rect x="18" y="22" width="3" height="3" fill="#8ff5d2"/><rect x="12" y="26" width="3" height="3" fill="#60ab96"/><rect x="16" y="26" width="3" height="3" fill="#8ff5d2"/><rect x="14.5" y="29" width="3" height="3" fill="#60ab96"/></svg><b>gnofy</b> :: tty0</a>
+  <span>exit status <span class="st">404</span> <span class="blink">█</span></span>
+</header>
+
+<main>
+  <div>
+    <div class="big" id="big"></div>
+    <span class="hole">HoleIR · unresolved route</span>
+  </div>
+  <div>
+    <div class="diag">
+      <div class="t"><span>● gnofy resolve</span><span>deterministic · no fallback</span></div>
+      <pre id="out"></pre>
+      <label class="prompt"><span>$</span><input id="cmd" autocomplete="off" spellcheck="false" placeholder="type help" aria-label="terminal command"></label>
+    </div>
+    <div class="btns">
+      <a class="btn primary" href="/">cd ~</a>
+      <a class="btn" href="/#download">↓ download</a>
+    </div>
+  </div>
+</main>
+
+<footer><span>gnofy.xyz — solidity in, gno out.</span><span><a href="https://github.com/gnofy-xyz/gnofy" style="text-decoration:none;color:var(--gno)">github</a> · EOF</span></footer>
+
+<script>
+const ART=`██╗  ██╗ ██████╗ ██╗  ██╗
+██║  ██║██╔═████╗██║  ██║
+███████║██║██╔██║███████║
+╚════██║████╔╝██║╚════██║
+     ██║╚██████╔╝     ██║
+     ╚═╝ ╚═════╝      ╚═╝`;
+const big=document.getElementById('big');big.textContent=ART;big.dataset.t=ART;
+
+const esc=s=>s.replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const path=esc(decodeURIComponentSafe(location.pathname+location.search)).slice(0,80);
+function decodeURIComponentSafe(s){try{return decodeURIComponent(s)}catch(_){return s}}
+const caret='^'.repeat(Math.max(1,Math.min(path.length,60)));
+const LINES=[
+ `<span class="d">$</span> gnofy resolve ${path}`,
+ ``,
+ `<span class="e">error[E404]</span>: route not found in AST`,
+ `  <span class="s">--&gt;</span> gnofy.xyz${path}`,
+ `   <span class="s">|</span>`,
+ ` <span class="s">1 |</span> GET ${path}`,
+ `   <span class="s">|</span>     <span class="e">${caret}</span> no matching node`,
+ `   <span class="s">|</span>`,
+ `   <span class="w">= note</span>: this path has no 1:1 equivalent; isolated as HoleIR`,
+ `   <span class="h">= help</span>: try <span class="h">cd ~</span>, or type <span class="h">help</span> below`,
+];
+const out=document.getElementById('out');
+const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+(function type(){
+  if(reduce){out.innerHTML=LINES.join('\n');return}
+  const t0=performance.now(),per=70;
+  const id=setInterval(()=>{const n=Math.min(LINES.length,Math.floor((performance.now()-t0)/per)+1);
+    out.innerHTML=LINES.slice(0,n).join('\n');if(n>=LINES.length)clearInterval(id)},30);
+})();
+
+const cmd=document.getElementById('cmd');
+const CMDS={
+  help:()=>`<span class="h">commands</span>: cd ~ · ls · download · docs · github · whoami · clear`,
+  ls:()=>`<span class="h">index.html</span>  <span class="s">install.sh</span>  <span class="s">install.ps1</span>  <span class="d">brand/</span>`,
+  github:()=>{setTimeout(()=>location.href='https://github.com/gnofy-xyz/gnofy',350);return 'opening github.com/gnofy-xyz/gnofy…'},
+  'git clone':()=>CMDS.github(),
+  whoami:()=>`a lost realm. no PreviousRealm() found.`,
+  docs:()=>{setTimeout(()=>location.href='/#pipeline',350);return 'opening pipeline docs…'},
+  download:()=>{setTimeout(()=>location.href='/#download',350);return 'jumping to downloads…'},
+  'cd ~':()=>{setTimeout(()=>location.href='/',350);return 'cd ~'},
+  'cd /':()=>CMDS['cd ~'](),'cd':()=>CMDS['cd ~'](),home:()=>CMDS['cd ~'](),
+  'sudo make me a realm':()=>`<span class="w">permission denied</span>: realms are earned, not sudo'd.`,
+};
+cmd.addEventListener('keydown',e=>{
+  if(e.key!=='Enter')return;
+  const v=cmd.value.trim();cmd.value='';if(!v)return;
+  if(v==='clear'){out.innerHTML='';return}
+  const f=CMDS[v.toLowerCase()];
+  out.innerHTML+=`\n<span class="d">$</span> ${esc(v)}\n`+(f?f():`<span class="e">gnofy: command not found</span>: ${esc(v.split(' ')[0])}`);
+  out.scrollTop=out.scrollHeight;
+});
+if(matchMedia('(hover:hover)').matches)cmd.focus({preventScroll:true});
+</script>
+</body>
+</html>
