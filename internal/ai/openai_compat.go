@@ -105,7 +105,10 @@ func (r *OpenAICompatResolver) Resolve(ctx context.Context, req HoleRequest) (Ho
 		return HoleResolution{}, fmt.Errorf("serializando petición IA: %w", err)
 	}
 
-	url := strings.TrimRight(r.cfg.Endpoint, "/") + "/chat/completions"
+	url := strings.TrimRight(r.cfg.Endpoint, "/")
+	if !strings.HasSuffix(url, "/chat/completions") {
+		url += "/chat/completions"
+	}
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return HoleResolution{}, fmt.Errorf("creando petición HTTP IA: %w", err)

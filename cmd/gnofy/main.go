@@ -68,7 +68,7 @@ func runAnalyze(args []string) error {
 	var includePaths stringSliceFlag
 	fs.Var(&includePaths, "include-path", "Directorio adicional para resolver imports (repetible)")
 
-	if err := fs.Parse(args); err != nil {
+	if err := fs.Parse(reorderFlagArgs(fs, args)); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return nil
 		}
@@ -122,7 +122,7 @@ func runConvert(args []string) error {
 	var includePaths stringSliceFlag
 	fs.Var(&includePaths, "include-path", "Directorio adicional para resolver imports (repetible)")
 
-	if err := fs.Parse(args); err != nil {
+	if err := fs.Parse(reorderFlagArgs(fs, args)); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return nil
 		}
@@ -209,7 +209,7 @@ func runConvert(args []string) error {
 func runVerify(args []string) error {
 	fs := flag.NewFlagSet("verify", flag.ContinueOnError)
 	gnoBin := fs.String("gno", "", "Ruta explícita al binario gno")
-	if err := fs.Parse(args); err != nil {
+	if err := fs.Parse(reorderFlagArgs(fs, args)); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return nil
 		}
@@ -246,6 +246,42 @@ func flagPassed(fs *flag.FlagSet, name string) bool {
 		}
 	})
 	return found
+}
+
+// reorderFlagArgs mueve los flags por delante de los argumentos posicionales para que
+// ambos órdenes funcionen (ej. `gnofy convert Counter.sol -o ./out` y `gnofy convert -o ./out Counter.sol`).
+func reorderFlagArgs(fs *flag.FlagSet, args []string) []string {
+	type boolFlag interface {
+		IsBoolFlag() bool
+	}
+	isBool := func(name string) bool {
+		f := fs.Lookup(name)
+		if f == nil {
+			return false
+		}
+		bf, ok := f.Value.(boolFlag)
+		return ok && bf.IsBoolFlag()
+	}
+
+	var flags, pos []string
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		if a == "--" {
+			pos = append(pos, args[i:]...)
+			break
+		}
+		if len(a) > 1 && a[0] == '-' {
+			flags = append(flags, a)
+			name := strings.TrimLeft(a, "-")
+			if !strings.Contains(name, "=") && !isBool(name) && name != "h" && name != "help" && i+1 < len(args) {
+				i++
+				flags = append(flags, args[i])
+			}
+			continue
+		}
+		pos = append(pos, a)
+	}
+	return append(flags, pos...)
 }
 
 func printUsage() {

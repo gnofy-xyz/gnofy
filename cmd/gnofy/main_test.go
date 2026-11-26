@@ -40,3 +40,21 @@ func TestHelpFlagsExitZeroAndNeverLeakSecrets(t *testing.T) {
 		}
 	}
 }
+
+func TestConvertAcceptsFlagsAfterPositionalArgs(t *testing.T) {
+	bin := filepath.Join(t.TempDir(), "gnofy-test-bin")
+	goBin := filepath.Join(runtime.GOROOT(), "bin", "go")
+	if out, err := exec.Command(goBin, "build", "-o", bin, ".").CombinedOutput(); err != nil {
+		t.Fatalf("go build failed: %v\n%s", err, string(out))
+	}
+
+	outDir := filepath.Join(t.TempDir(), "counter")
+	solPath := filepath.Join("..", "..", "testdata", "contracts", "Counter.sol")
+	cmd := exec.Command(bin, "convert", solPath, "-o", outDir)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("gnofy convert <file> -o <dir> failed: %v\n%s", err, string(out))
+	}
+	if _, err := os.Stat(filepath.Join(outDir, "counter.gno")); err != nil {
+		t.Fatalf("expected counter.gno in %s: %v", outDir, err)
+	}
+}

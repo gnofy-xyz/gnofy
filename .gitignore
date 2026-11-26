@@ -6,6 +6,7 @@
 *.test
 *.out
 
+
 # GoLand / JetBrains & Editors
 .idea/
 .vscode/
